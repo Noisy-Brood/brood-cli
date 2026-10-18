@@ -1,10 +1,12 @@
-# Publish @noisybrood/cli to npm when a version's tag is pushed.
+# Stage @noisybrood/cli on npm when a version's tag is pushed. A maintainer approves
+# it with a second factor before it is published, so no version goes live
+# from here alone.
 #
 # Trusted publishing: npm takes this workflow's own identity from GitHub, so
 # no npm token is held anywhere, and attests the package's provenance, since
 # this repository is public. On GitHub's runners, the only ones npm accepts
-# for it. Generated with the rest of this repository from a private one; not
-# edited here.
+# for it. This workflow is trusted to stage and not to publish. Generated with
+# the rest of this repository from a private one; not edited here.
 name: publish
 
 on:
@@ -42,4 +44,5 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
-      - run: npm publish
+      # Staging needs npm 11.15.0 or later, newer than the one Node ships.
+      - run: npx -y npm@11.21.0 stage publish

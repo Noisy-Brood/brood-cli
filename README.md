@@ -66,8 +66,9 @@ This repository is where brood is built and published, copied one way from a
 private one. brood is written and reviewed there, and copied here with the
 parts of Noisy Brood's own packages it compiles in whenever it changes.
 Nothing here is edited by hand, and it takes no pull requests. A tag starts
-the publish workflow, which builds the package here and publishes it to npm
-with provenance, holding no npm token.
+the publish workflow, which builds the package here and stages it on npm
+with provenance, holding no npm token, and a maintainer approves each version
+with a second factor before it is published.
 
 Questions and ideas are welcome in
 [Discussions](https://github.com/Noisy-Brood/brood-cli/discussions), and bugs as
