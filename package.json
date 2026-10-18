@@ -4,12 +4,26 @@
   "description": "brood, the command line over Noisy Brood's index of who writes to you. It never reads a message.",
   "license": "Apache-2.0",
   "type": "module",
-  "bin": { "brood": "dist/brood.js" },
-  "files": ["dist"],
-  "engines": { "node": ">=24" },
-  "repository": { "type": "git", "url": "git+https://github.com/Noisy-Brood/brood-cli.git" },
-  "keywords": ["cli", "email", "gmail", "metadata", "privacy"],
-  "publishConfig": { "access": "public", "provenance": true },
+  "bin": {
+    "brood": "dist/brood.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "keywords": [
+    "cli",
+    "email",
+    "gmail",
+    "metadata",
+    "privacy"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsc -p . && node -e \"require('node:fs').cpSync('src/brood/tokens/dark.css','dist/brood/tokens/dark.css')\"",
     "test": "node --test src/*.test.ts"
@@ -17,5 +31,9 @@
   "devDependencies": {
     "@types/node": "26.6.5",
     "typescript": "6.0.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Noisy-Brood/brood-cli.git"
   }
 }
