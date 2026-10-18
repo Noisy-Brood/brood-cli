@@ -202,7 +202,7 @@ export const ANSWER_FIELDS: { [K in OperationName]: Docs<Answers[K]> } = {
   },
   get_sender: {
     id: "The sender's id.",
-    scope: `${listed(SENDER_SCOPES)}, as asked.`,
+    scope: `${listed(SENDER_SCOPES)}: the scope it was read with, as asked, but \`address\` for \`domain\` under a mail provider's domain or your own.`,
     messages: "Inbound messages over the window the app's sender page reads.",
     mailing: "Whether most of it declared itself a mailing.",
     written_to: "Whether you have written to it.",

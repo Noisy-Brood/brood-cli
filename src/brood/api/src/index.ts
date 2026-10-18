@@ -61,6 +61,9 @@ export type Scope = "read" | "act";
 
 const OWNER =
   "The person whose index to read, by their user id, for a helper they have granted access. Leave it out to read your own.";
+/** Where `domain` reads one address, said once for every operation that takes a scope. */
+const SHARED_ROOT =
+  "Under a mail provider's domain or your own, `domain` is the one address too, since everyone on it is someone else.";
 const LIMIT = `How many to return, from 1 to ${API_PAGE_MAX}.`;
 const CURSOR =
   "Where to carry on from: the `next` of the page before. Leave it out for the first page.";
@@ -105,8 +108,7 @@ export const OPERATIONS = {
     arguments: {
       owner: OWNER,
       sender: "The sender's id, as another answer gave it.",
-      scope:
-        "`domain`, the default, for everything from the sender's domain, or `address` for the one address.",
+      scope: `\`domain\`, the default, for everything from the sender's domain, or \`address\` for the one address. ${SHARED_ROOT}`,
     },
   },
   list_classifications: {
@@ -158,8 +160,7 @@ export const OPERATIONS = {
       until: UNTIL,
       sender:
         "Only messages from or to this sender, by the id another answer gave it.",
-      scope:
-        "With `sender`: `domain`, the default, for everything from the sender's root domain, or `address` for the one address. Under a mail provider's domain or your own, `domain` is the one address too, since everyone on it is someone else.",
+      scope: `With \`sender\`: \`domain\`, the default, for everything from the sender's root domain, or \`address\` for the one address. ${SHARED_ROOT}`,
       limit: LIMIT,
       cursor: CURSOR,
     },
