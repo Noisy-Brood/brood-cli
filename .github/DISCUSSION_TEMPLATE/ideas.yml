@@ -1,0 +1,13 @@
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would like brood to do
+      description: The question you would ask it, or the task you would hand it. brood reads who writes to you and never what they wrote, so an idea that needs a message's words is one it cannot take up.
+    validations:
+      required: true
+  - type: textarea
+    id: now
+    attributes:
+      label: How you do it now
+      description: Optional. Leave out any address or name from your mailbox.

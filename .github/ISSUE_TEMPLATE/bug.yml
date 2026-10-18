@@ -1,0 +1,23 @@
+name: Something brood does wrong
+description: A command that fails, answers wrongly, or prints something it should not.
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What `brood version` prints.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What you ran, and what happened
+      description: The command, and what it printed. Leave out any address or name from your mailbox, and never paste a token or the credentials file.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true

@@ -1,0 +1,45 @@
+# Publish @noisybrood/cli to npm when a version's tag is pushed.
+#
+# Trusted publishing: npm takes this workflow's own identity from GitHub, so
+# no npm token is held anywhere, and attests the package's provenance, since
+# this repository is public. On GitHub's runners, the only ones npm accepts
+# for it. Generated with the rest of this repository from a private one; not
+# edited here.
+name: publish
+
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.15.0"
+          registry-url: "https://registry.npmjs.org"
+      # A tag publishes only the version the package says it is.
+      - name: The tag names the package's version
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          [[ "${GITHUB_REF_NAME}" == "v${version}" ]] || { echo "the tag ${GITHUB_REF_NAME} is not v${version}"; exit 1; }
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm publish

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: A question
+    url: https://github.com/Noisy-Brood/brood-cli/discussions/categories/q-a
+    about: How a command works, or what an answer means. Asked in Discussions.
+  - name: An idea
+    url: https://github.com/Noisy-Brood/brood-cli/discussions/categories/ideas
+    about: Something brood could do. Shared in Discussions.
+  - name: A security problem
+    url: https://github.com/Noisy-Brood/brood-cli/security/advisories/new
+    about: Report it privately, never in an issue or a discussion. SECURITY.md says how.

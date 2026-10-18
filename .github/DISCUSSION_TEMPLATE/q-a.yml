@@ -1,0 +1,13 @@
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What `brood version` prints, if it is installed.
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: Leave out any address or name from your mailbox, and never paste a token or the credentials file.
+    validations:
+      required: true
