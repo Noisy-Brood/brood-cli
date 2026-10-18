@@ -1,6 +1,6 @@
 {
   "name": "@noisybrood/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "brood, the command line over Noisy Brood's index of who writes to you. It never reads a message.",
   "license": "Apache-2.0",
   "type": "module",
