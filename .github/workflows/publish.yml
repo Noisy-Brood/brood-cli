@@ -33,7 +33,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24.15.0"
+          node-version: "24.22.0"
           registry-url: "https://registry.npmjs.org"
       # A tag publishes only the version the package says it is.
       - name: The tag names the package's version
