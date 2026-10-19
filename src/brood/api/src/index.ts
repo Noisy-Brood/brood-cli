@@ -1,3 +1,4 @@
+import { APP_ORIGIN } from "./origin.ts";
 import {
   API_ACTS_PER_MINUTE,
   API_CALLS_PER_MINUTE,
@@ -29,7 +30,7 @@ import {
  */
 
 /** Where every operation is called, by POST with its arguments in the body (DD21 §2, §3). */
-export const API_BASE = "https://app.noisybrood.com/api/v1";
+export const API_BASE = `${APP_ORIGIN}/api/v1`;
 
 /**
  * Where a client signs in (DD21 §4): Clerk's OAuth server for the production
