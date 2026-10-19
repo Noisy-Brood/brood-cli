@@ -60,6 +60,12 @@ as the API gives it.
 Before an answer, brood says any mailbox it could not read whole, so a quiet
 answer is never taken for a quiet mailbox.
 
+## Reading the comments
+
+The code's comments refer to internal design documents and issues, such as
+`DD10 §6` or `#1367`. Those are private. You do not need them to read the code
+or run its tests.
+
 ## This repository
 
 This repository is where brood is built and published, copied one way from a
