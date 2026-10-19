@@ -25,7 +25,7 @@
     "provenance": true
   },
   "scripts": {
-    "build": "tsc -p . && node -e \"require('node:fs').cpSync('src/brood/tokens/dark.css','dist/brood/tokens/dark.css')\"",
+    "build": "tsc -p .",
     "test": "node --test src/*.test.ts"
   },
   "devDependencies": {

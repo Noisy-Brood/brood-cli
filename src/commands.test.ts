@@ -9,6 +9,7 @@ import {
   signedIn,
   standIn,
 } from "./stand-in.test-support.ts";
+import { DARK_BARN } from "./brood/tokens/dark.ts";
 
 /**
  * The commands (DD10 §3, #1339): what each prints, that nothing a sender
@@ -777,17 +778,8 @@ describe("the wren's colour (#1339)", () => {
   const BARN_TRUE = "\u001b[38;2;";
 
   it("is Barn on a terminal that shows true colour, read from the dark scheme", async () => {
-    const { readFileSync } = await import("node:fs");
-    const { fileURLToPath } = await import("node:url");
-    const { readColourTokens } = await import("./brood/tokens/src/contrast.ts");
-    const barn = readColourTokens(
-      readFileSync(
-        fileURLToPath(import.meta.resolve("./brood/tokens/dark.css")),
-        "utf8",
-      ),
-    ).find((t) => t.name === "barn")!.value;
     const rgb = [1, 3, 5]
-      .map((i) => parseInt(barn.slice(i, i + 2), 16))
+      .map((i) => parseInt(DARK_BARN.slice(i, i + 2), 16))
       .join(";");
     const s = standIn({});
     s.io.tty = true;

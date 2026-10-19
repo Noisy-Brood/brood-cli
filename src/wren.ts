@@ -1,6 +1,4 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { readColourTokens } from "./brood/tokens/src/contrast.ts";
+import { DARK_BARN } from "./brood/tokens/dark.ts";
 import { BODY, DETAIL_WEIGHT, EYE, WING } from "./brood/tokens/src/wren.ts";
 
 /**
@@ -144,20 +142,16 @@ export function wrenArt(columns = 32): string[] {
 }
 
 /**
- * Barn, as the dark scheme sets it, read from the tokens when brood runs.
- * A terminal does not say whether its ground is light or dark, and this one
- * holds 3:1 on white, on black and on Ink, where the light scheme's falls
- * short on a dark ground. It is the screen's one drop of Barn.
+ * Barn, as the dark scheme sets it (`DARK_BARN`). A terminal does not say
+ * whether its ground is light or dark, and this one holds 3:1 on white, on
+ * black and on Ink, where the light scheme's falls short on a dark ground. It
+ * is the screen's one drop of Barn.
  */
 function barn(): [number, number, number] {
-  const css = readFileSync(
-    fileURLToPath(import.meta.resolve("./brood/tokens/dark.css")),
-    "utf8",
+  const [r, g, b] = [1, 3, 5].map((i) =>
+    parseInt(DARK_BARN.slice(i, i + 2), 16),
   );
-  const value = readColourTokens(css).find((t) => t.name === "barn")?.value;
-  const hex = value?.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
-  if (!hex) throw new Error("dark.css sets no --color-barn as six hex digits");
-  return [parseInt(hex[1]!, 16), parseInt(hex[2]!, 16), parseInt(hex[3]!, 16)];
+  return [r!, g!, b!];
 }
 
 /** The levels of xterm's 256-colour cube, for a terminal with no true colour. */
