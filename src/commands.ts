@@ -5,7 +5,7 @@ import {
   type Classification,
   type Envelope,
   type Rule,
-} from "./brood/api/src/index.ts";
+} from "./brood/api/src/client.ts";
 import { API_PAGE_MAX, API_STRETCH_DAYS, PORTRAIT_DAYS } from "./brood/figures/index.ts";
 import { call } from "./client.ts";
 import { clean, Refusal, type Io } from "./io.ts";

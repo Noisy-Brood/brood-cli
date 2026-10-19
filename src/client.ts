@@ -1,13 +1,13 @@
 import {
   API_BASE,
   PROBLEM_CODES,
-  PROBLEMS,
+  PROBLEM_TITLES,
   type Answers,
   type Arguments,
   type Envelope,
   type OperationName,
   type Problem,
-} from "./brood/api/src/index.ts";
+} from "./brood/api/src/client.ts";
 import { clean, cleaned, isRecord, Refused, Refusal, type Io } from "./io.ts";
 import { freshCredentials, refresh } from "./sign-in.ts";
 import { VERSION } from "./version.ts";
@@ -50,20 +50,20 @@ function refusalOf(problem: Problem, retryAfter: string | null): Refusal {
       // limit has only its wait.
       return new Refusal(
         problem.detail
-          ? `${PROBLEMS.rate_limited.title}. ${problem.detail}`
+          ? `${PROBLEM_TITLES.rate_limited.title}. ${problem.detail}`
           : retryAfter
-            ? `${PROBLEMS.rate_limited.title}. Try again in ${clean(retryAfter)} seconds.`
-            : `${PROBLEMS.rate_limited.title}. Try again in a minute.`,
+            ? `${PROBLEM_TITLES.rate_limited.title}. Try again in ${clean(retryAfter)} seconds.`
+            : `${PROBLEM_TITLES.rate_limited.title}. Try again in a minute.`,
       );
     case "invalid_argument":
       return new Refusal(
-        `${PROBLEMS.invalid_argument.title}: ${problem.detail ?? "the request"}.`,
+        `${PROBLEM_TITLES.invalid_argument.title}: ${problem.detail ?? "the request"}.`,
       );
     default:
       return new Refusal(
         problem.detail
-          ? `${PROBLEMS[problem.code].title}. ${problem.detail}`
-          : `${PROBLEMS[problem.code].title}.`,
+          ? `${PROBLEM_TITLES[problem.code].title}. ${problem.detail}`
+          : `${PROBLEM_TITLES[problem.code].title}.`,
       );
   }
 }

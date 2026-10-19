@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { API_BASE, SIGN_IN, type AccountState } from "./brood/api/src/index.ts";
+import { API_BASE, SIGN_IN, type AccountState } from "./brood/api/src/client.ts";
 import type { Io } from "./io.ts";
 import { writeCredentials, type Credentials } from "./store.ts";
 

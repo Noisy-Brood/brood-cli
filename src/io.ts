@@ -1,4 +1,4 @@
-import type { ProblemCode } from "./brood/api/src/index.ts";
+import type { ProblemCode } from "./brood/api/src/client.ts";
 import type { StoreEnv } from "./store.ts";
 
 /**

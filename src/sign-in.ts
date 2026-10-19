@@ -1,4 +1,4 @@
-import { SIGN_IN } from "./brood/api/src/index.ts";
+import { SIGN_IN } from "./brood/api/src/client.ts";
 import { clean, isRecord, Refusal, SessionEnded, type Io } from "./io.ts";
 import {
   readCredentials,

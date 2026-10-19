@@ -1,4 +1,4 @@
-import type { AccountState, Envelope } from "./brood/api/src/index.ts";
+import type { AccountState, Envelope } from "./brood/api/src/client.ts";
 import type { Io } from "./io.ts";
 
 /**
