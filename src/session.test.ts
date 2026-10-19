@@ -47,8 +47,8 @@ describe("brood login (#1339)", () => {
     assert.ok(
       s.err.some(
         (l) =>
-          l.includes("ABCD-EFGH") &&
-          l.includes("https://accounts.example.test/device"),
+          l ===
+          "Open https://accounts.example.test/device and enter the code ABCD-EFGH.",
       ),
     );
     // RFC 8628: slow_down adds five seconds to every wait after it.
