@@ -111,6 +111,8 @@ export type Envelope<T> = {
 export type DescribeIndex = {
   holds: readonly string[];
   never_holds: readonly string[];
+  /** Whether Brood reads any mailbox for the person (#297). */
+  mailbox_connected: boolean;
 };
 
 /** The person's mailboxes; the address is their own, not a sender's. */
