@@ -89,6 +89,22 @@ export const KEEP_OUTCOMES = [
 ] as const;
 export type KeepOutcome = (typeof KEEP_OUTCOMES)[number];
 
+/**
+ * What became of one line given to `add_customers`, or would, as the
+ * Customers page's paste says it, which a test keeps equal: a customer, one
+ * already, a domain that names no organisation, one that cannot be read, a
+ * site's address, or a line Brood failed on.
+ */
+export const CUSTOMER_OUTCOMES = [
+  "added",
+  "already",
+  "shared",
+  "invalid",
+  "address",
+  "failed",
+] as const;
+export type CustomerOutcome = (typeof CUSTOMER_OUTCOMES)[number];
+
 /** A list of values as the reference writes them: each as code, `or` before the last. */
 export const listed = (values: readonly string[]) =>
   values.length < 2

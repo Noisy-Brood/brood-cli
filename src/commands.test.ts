@@ -1169,3 +1169,117 @@ describe("keep (#659)", () => {
     assert.match(s.err.join("\n"), /holds no addresses or domains/);
   });
 });
+
+const customersAnswer = (
+  checked: boolean,
+  outcomes: [string, string][],
+  later: boolean | null = checked ? null : false,
+) =>
+  envelope({
+    checked,
+    later,
+    lines: outcomes.map(([text, outcome], i) => ({
+      line: i + 1,
+      text,
+      outcome,
+    })),
+  });
+
+describe("customers add (#659)", () => {
+  it("checks a file's customers, asks, and adds them on a yes", async () => {
+    const s = await signedIn({
+      [api("add_customers")]: [
+        () =>
+          customersAnswer(true, [
+            ["Acme: acme.com", "added"],
+            ["gmail.com", "shared"],
+          ]),
+        () =>
+          customersAnswer(false, [
+            ["Acme: acme.com", "added"],
+            ["gmail.com", "shared"],
+          ]),
+      ],
+    });
+    const asked: string[] = [];
+    s.io.read = async () => "Acme: acme.com\ngmail.com";
+    s.io.ask = async (q) => (asked.push(q), "yes");
+    assert.equal(await run(s.io, ["customers", "add", "customers.txt"]), 0);
+    assert.deepEqual(
+      s.sent.map((x) => JSON.parse(x.body)),
+      [
+        { lines: "Acme: acme.com\ngmail.com", check: true },
+        { lines: "Acme: acme.com\ngmail.com" },
+      ],
+    );
+    assert.deepEqual(asked, ["Add one customer? [y/N] "]);
+    assert.deepEqual(s.out, [
+      "line 1  Acme: acme.com  to add",
+      "line 2  gmail.com       refused: a mail provider's domain or your own",
+      "Added one customer. Brood proposes a home for their mail now, among your proposals.",
+    ]);
+  });
+
+  it("says the proposals come shortly when Brood has yet to run over them", async () => {
+    const s = await signedIn({
+      [api("add_customers")]: [
+        () =>
+          customersAnswer(
+            false,
+            [
+              ["a.com", "added"],
+              ["b.com", "added"],
+            ],
+            true,
+          ),
+      ],
+    });
+    s.io.input = async () => "a.com\nb.com";
+    assert.equal(await run(s.io, ["customers", "add", "--yes"]), 0);
+    assert.equal(
+      s.out.at(-1),
+      "Added 2 customers. Brood proposes a home for their mail shortly.",
+    );
+  });
+
+  it("says a line again when Brood failed on it after the yes", async () => {
+    const s = await signedIn({
+      [api("add_customers")]: [
+        () => customersAnswer(true, [["a.com", "added"]]),
+        () => customersAnswer(false, [["a.com", "failed"]]),
+      ],
+    });
+    s.io.read = async () => "a.com";
+    s.io.ask = async () => "y";
+    assert.equal(await run(s.io, ["customers", "add", "c.txt"]), 0);
+    assert.deepEqual(s.out.slice(-2), [
+      "line 1  a.com  not added: Brood failed on it, so try it again",
+      "No new customers were added.",
+    ]);
+  });
+
+  it("asks nothing when no line is new", async () => {
+    const s = await signedIn({
+      [api("add_customers")]: [
+        () => customersAnswer(true, [["acme.com", "already"]]),
+      ],
+    });
+    s.io.read = async () => "acme.com";
+    s.io.ask = async () => assert.fail("asked with nothing to add");
+    assert.equal(await run(s.io, ["customers", "add", "c.txt"]), 0);
+    assert.equal(s.out.at(-1), "No new customers to add.");
+  });
+
+  it("refuses a bare customers, another verb, and a list from standard input without --yes, sending nothing", async () => {
+    for (const argv of [
+      ["customers"],
+      ["customers", "remove"],
+      ["customers", "add"],
+    ]) {
+      const s = await signedIn({});
+      s.io.input = async () => "acme.com";
+      assert.equal(await run(s.io, argv), 1, argv.join(" "));
+      assert.equal(s.sent.length, 0, argv.join(" "));
+    }
+  });
+});

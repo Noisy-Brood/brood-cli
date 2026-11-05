@@ -3,6 +3,7 @@ import type {
   ADDRESSED,
   ClassificationReason,
   ClassificationState,
+  CustomerOutcome,
   DIRECTIONS,
   KeepOutcome,
   KeptKind,
@@ -66,6 +67,7 @@ export type Arguments = {
   hush: OwnerArgument & { classification: string };
   unhush: OwnerArgument & { classification: string };
   keep: OwnerArgument & { lines: string; check?: boolean };
+  add_customers: OwnerArgument & { lines: string; check?: boolean };
 };
 
 /** A stretch of whole UTC days, each as YYYY-MM-DD, both counted. */
@@ -358,6 +360,15 @@ export type Keep = {
   lines: { line: number; text: string; outcome: KeepOutcome }[];
 };
 
+/** What adding a list of customers did, or would do. */
+export type AddCustomers = {
+  /** Whether nothing was written: what adding them would do. */
+  checked: boolean;
+  /** Whether the engine has yet to run over what was added, so its proposals come shortly; null for a check. */
+  later: boolean | null;
+  lines: { line: number; text: string; outcome: CustomerOutcome }[];
+};
+
 export type Answers = {
   describe_index: DescribeIndex;
   list_accounts: ListAccounts;
@@ -375,6 +386,7 @@ export type Answers = {
   hush: Hush;
   unhush: Unhush;
   keep: Keep;
+  add_customers: AddCustomers;
 };
 
 /** The codes a problem carries, which clients branch on (DD21 §8, RFC 9457). */

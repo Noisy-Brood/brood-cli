@@ -3,6 +3,7 @@ import {
   TONE_TITLES,
   type Answers,
   type Classification,
+  type CustomerOutcome,
   type Envelope,
   type KeepOutcome,
   type Rule,
@@ -573,46 +574,44 @@ const unhush: Run = async (io, style, options, args) => {
   });
 };
 
-/** What became of a line, in words: `keep`'s answer for each. */
-const KEPT: Record<KeepOutcome, string> = {
-  added: "added",
-  already_listed: "already kept",
-  repeated: "repeats an earlier line",
-  not_in_force: "not added",
-  invalid_address: "refused: not an address",
-  invalid_domain: "refused: not a domain",
-  invalid_pattern: "refused: not a pattern",
-  unrenderable: "refused: a filter cannot hold it exactly",
-};
+/** The operations that add a list one a line, checked first: what `paste` runs. */
+type Paste = "keep" | "add_customers";
+type PasteBody = { owner?: string; lines: string; check?: boolean };
 
-const lines = (io: Io, style: Style, k: Answers["keep"]) =>
-  rows(
-    io,
-    k.lines.map((l) => [
-      dim(style, `line ${l.line}`),
-      l.text,
-      k.checked && l.outcome === "added" ? "to add" : KEPT[l.outcome],
-    ]),
-  );
+/** How one list's paste is said: its command, its words, and its sentences. */
+type PasteSpec<K extends Paste> = {
+  command: string;
+  /** What the list holds, for a file that holds none. */
+  holds: string;
+  send: (io: Io, body: PasteBody) => Promise<Envelope<Answers[K]>>;
+  /** Each line, and what became of it in words, as rows. */
+  told: (answer: Answers[K], style: Style) => string[][];
+  question: (fresh: number) => string;
+  nothingNew: string;
+  /** Whether the lines are said again after an add the person was asked about. */
+  again: (answer: Answers[K]) => boolean;
+  said: (io: Io, answer: Answers[K]) => void;
+};
 
 const many = (n: number) => (n === 1 ? "one" : String(n));
 
 /**
- * `brood keep add`: the never-quiet list's paste, as the app has it, checked
- * first and added on a yes. A list read from standard input leaves nobody to
- * ask there, so it is added only with `--yes`; `--check` stops at the check.
+ * `brood keep add` and `brood customers add`: the app's paste, checked first
+ * and added on a yes. A list read from standard input leaves nobody to ask
+ * there, so it is added only with `--yes`; `--check` stops at the check.
  */
-async function keepAdd(
+async function paste<K extends Paste>(
   io: Io,
   style: Style,
   options: Options,
   args: string[],
+  spec: PasteSpec<K>,
 ): Promise<void> {
   if (args.length > 1)
     throw new Refusal("Name one file, or none for standard input.");
   if (options.check && options.yes)
     throw new Refusal("--check and --yes ask for opposite things: give one.");
-  without(options, ["limit", "cursor"], "brood keep add");
+  without(options, ["limit", "cursor"], spec.command);
   const [file] = args;
   let given: string;
   try {
@@ -629,16 +628,15 @@ async function keepAdd(
   }
   if (!given.trim())
     throw new Refusal(
-      `${file === undefined ? "Standard input" : clean(file)} holds no addresses or domains.`,
+      `${file === undefined ? "Standard input" : clean(file)} holds no ${spec.holds}.`,
     );
+  const lines = (a: Answers[K]) => rows(io, spec.told(a, style));
   const body = { ...owner(options), lines: given };
-  if (options.yes) {
-    const added = await call(io, "keep", body);
-    return shown(io, style, added, (k) => {
-      lines(io, style, k);
-      said(io, k);
+  if (options.yes)
+    return shown(io, style, await spec.send(io, body), (a) => {
+      lines(a);
+      spec.said(io, a);
     });
-  }
   const asking = file === undefined ? null : io.ask;
   if (!options.check && (style.json || asking === null))
     throw new Refusal(
@@ -648,38 +646,110 @@ async function keepAdd(
           ? "brood cannot ask while it reads the list from standard input: give --yes to add it, or --check to see what would be added."
           : "Nobody is at a terminal to ask: give --yes to add the list, or --check to see what would be added.",
     );
-  const checked = await call(io, "keep", { ...body, check: true });
-  shown(io, style, checked, (k) => lines(io, style, k));
+  const checked = await spec.send(io, { ...body, check: true });
+  shown(io, style, checked, lines);
   if (options.check || asking === null) return;
-  const fresh = checked.data.lines.filter((l) => l.outcome === "added").length;
-  if (fresh === 0) return io.out("Nothing new to keep.");
-  const yes = await asking(`Keep ${many(fresh)}? [y/N] `);
+  const fresh = checked.data.lines.filter(
+    (l: Answers[K]["lines"][number]) => l.outcome === "added",
+  ).length;
+  if (fresh === 0) return io.out(spec.nothingNew);
+  const yes = await asking(`${spec.question(fresh)} [y/N] `);
   if (!/^y(es)?$/i.test(yes.trim())) return io.out("Nothing added.");
-  const added = await call(io, "keep", body);
-  shown(io, style, added, (k) => {
-    if (!k.in_force) lines(io, style, k);
-    said(io, k);
+  shown(io, style, await spec.send(io, body), (a) => {
+    if (spec.again(a)) lines(a);
+    spec.said(io, a);
   });
 }
 
-/** What a list added comes to, in a sentence. */
-function said(io: Io, k: Answers["keep"]): void {
-  const added = k.lines.filter((l) => l.outcome === "added").length;
-  if (!k.in_force)
-    return io.out(
-      "Nothing was added: one of Brood's filters could not change, and the list holds only what every filter keeps. Try again later.",
+/** A paste's lines as rows, each outcome in words; `to add` for `added` in a check. */
+const told = <O extends string>(
+  a: { checked: boolean; lines: { line: number; text: string; outcome: O }[] },
+  words: Record<O, string>,
+  style: Style,
+): string[][] =>
+  a.lines.map((l) => [
+    dim(style, `line ${l.line}`),
+    l.text,
+    a.checked && l.outcome === "added" ? "to add" : words[l.outcome],
+  ]);
+
+const added = (a: { lines: { outcome: string }[] }) =>
+  a.lines.filter((l) => l.outcome === "added").length;
+
+/** What became of a line given to `keep`, in words. */
+const KEPT: Record<KeepOutcome, string> = {
+  added: "added",
+  already_listed: "already kept",
+  repeated: "repeats an earlier line",
+  not_in_force: "not added",
+  invalid_address: "refused: not an address",
+  invalid_domain: "refused: not a domain",
+  invalid_pattern: "refused: not a pattern",
+  unrenderable: "refused: a filter cannot hold it exactly",
+};
+
+/** What became of a line given to `add_customers`, in words. */
+const NAMED: Record<CustomerOutcome, string> = {
+  added: "added",
+  already: "a customer already",
+  shared: "refused: a mail provider's domain or your own",
+  invalid: "refused: no domain Brood can read",
+  address: "refused: a site's address, so write its domain",
+  failed: "not added: Brood failed on it, so try it again",
+};
+
+const KEEP: PasteSpec<"keep"> = {
+  command: "brood keep add",
+  holds: "addresses or domains",
+  send: (io, body) => call(io, "keep", body),
+  told: (k, style) => told(k, KEPT, style),
+  question: (n) => `Keep ${many(n)}?`,
+  nothingNew: "Nothing new to keep.",
+  again: (k) => !k.in_force,
+  said(io, k) {
+    if (!k.in_force)
+      return io.out(
+        "Nothing was added: one of Brood's filters could not change, and the list holds only what every filter keeps. Try again later.",
+      );
+    io.out(
+      added(k) === 0
+        ? "Nothing new to keep."
+        : `Kept ${many(added(k))}. Brood never files their mail.`,
     );
-  io.out(
-    added === 0
-      ? "Nothing new to keep."
-      : `Kept ${many(added)}. Brood never files their mail.`,
-  );
-}
+  },
+};
+
+const CUSTOMERS: PasteSpec<"add_customers"> = {
+  command: "brood customers add",
+  holds: "customers",
+  send: (io, body) => call(io, "add_customers", body),
+  told: (c, style) => told(c, NAMED, style),
+  question: (n) => `Add ${n === 1 ? "one customer" : `${n} customers`}?`,
+  nothingNew: "No new customers to add.",
+  again: (c) => c.lines.some((l) => l.outcome === "failed"),
+  said(io, c) {
+    const n = added(c);
+    if (n === 0) return io.out("No new customers were added.");
+    io.out(
+      `Added ${n === 1 ? "one customer" : `${n} customers`}. Brood proposes a home for their mail ${c.later ? "shortly" : "now, among your proposals"}.`,
+    );
+  },
+};
+
+/** `brood customers add`, a list of customers. */
+const customers: Run = async (io, style, options, args) => {
+  const [verb, ...rest] = args;
+  if (verb !== "add")
+    throw new Refusal(
+      `brood customers takes add${verb === undefined ? "" : `, not ${clean(verb)}`}.`,
+    );
+  return paste(io, style, options, rest, CUSTOMERS);
+};
 
 /** `brood keep`, the never-quiet list; `brood keep add`, a list added to it. */
 const keep: Run = async (io, style, options, args) => {
   const [verb, ...rest] = args;
-  if (verb === "add") return keepAdd(io, style, options, rest);
+  if (verb === "add") return paste(io, style, options, rest, KEEP);
   if (verb !== undefined)
     throw new Refusal(`brood keep takes add, or nothing: not ${clean(verb)}.`);
   without(options, ["check", "yes"], "brood keep");
@@ -726,4 +796,5 @@ export const COMMANDS: Record<string, { run: Run; takes: OptionName[] }> = {
   hush: { run: hush, takes: [] },
   unhush: { run: unhush, takes: [] },
   keep: { run: keep, takes: ["check", "yes", "limit", "cursor"] },
+  customers: { run: customers, takes: ["check", "yes"] },
 };
