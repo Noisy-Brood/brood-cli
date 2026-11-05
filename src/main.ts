@@ -10,8 +10,9 @@ import { depthOf, wrenIn } from "./wren.ts";
 
 /**
  * `brood`, the command line over Brood's index (DD10): it answers questions
- * about a mailbox without opening one, and changes it only by `hush` and
- * `unhush`. Bare `brood` prints this help, never a report (DD10 §3), so it is
+ * about a mailbox without opening one, and changes it only by `hush`,
+ * `unhush` and `keep add`, which changes Brood's filters to keep mail in
+ * view. Bare `brood` prints this help, never a report (DD10 §3), so it is
  * never a status glanced at, under the wren.
  */
 
@@ -29,9 +30,13 @@ Structure
   brood classification <id>         one, with the reason for its state
   brood rules [<id>]                the filters Brood installed
 
-Suppression, the two that change your mailbox
+Suppression, which changes your mailbox
   brood hush <domain|address|id>    file what Brood proposed for a sender
   brood unhush <domain|address|id>  undo the filing
+
+Keeping in view, which changes Brood's filters so it never files these senders
+  brood keep                        your never-quiet list
+  brood keep add [<file>]           add addresses and domains, one a line, from a file or standard input
 
 Accounts and session
   brood accounts                    your mailboxes, and whether Brood can read them
@@ -47,6 +52,8 @@ Options
   --state <state>        classifications in one state
   --week <monday>        brood week for an earlier week
   --classification <id>  brood rules for one classification
+  --check                brood keep add: say what each line would become, and add nothing
+  --yes                  brood keep add: add the list without asking
   --owner <user id>      the index of someone who granted you access
   --no-color             no dimming, as NO_COLOR also asks`;
 
@@ -80,6 +87,8 @@ const OPTION_NAMES: OptionName[] = [
   "week",
   "sender",
   "classification",
+  "check",
+  "yes",
 ];
 
 /** Runs one command line, and answers its exit status. */
@@ -101,6 +110,8 @@ export async function run(io: Io, argv: string[]): Promise<number> {
         week: { type: "string" },
         sender: { type: "string" },
         classification: { type: "string" },
+        check: { type: "boolean" },
+        yes: { type: "boolean" },
         owner: { type: "string" },
       },
     });
@@ -176,6 +187,8 @@ export async function run(io: Io, argv: string[]): Promise<number> {
       ...(values.classification === undefined
         ? {}
         : { classification: values.classification }),
+      ...(values.check ? { check: true } : {}),
+      ...(values.yes ? { yes: true } : {}),
     };
     await runs.run(
       io,

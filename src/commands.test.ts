@@ -951,3 +951,221 @@ describe("a mailbox current and not read whole (#1369)", () => {
     assert.ok(!s.err.some((l) => l.startsWith("Mailbox acc-1")));
   });
 });
+
+const keepAnswer = (
+  checked: boolean,
+  outcomes: [string, string][],
+  inForce: boolean | null = checked ? null : true,
+) =>
+  envelope({
+    checked,
+    in_force: inForce,
+    lines: outcomes.map(([text, outcome], i) => ({
+      line: i + 1,
+      text,
+      outcome,
+    })),
+  });
+
+describe("keep (#659)", () => {
+  it("lists the never-quiet list, and what Brood keeps for everyone", async () => {
+    const s = await signedIn({
+      [api("list_kept")]: [
+        () =>
+          envelope({
+            kept: [
+              {
+                kind: "domain",
+                value: "bank.com",
+                added_at: "2026-10-01T00:00:00Z",
+                last_wrote: "2026-10-16T10:00:00Z",
+                sender: null,
+              },
+            ],
+            seeds: [
+              {
+                kind: "address",
+                value: "no-reply@accounts.google.com",
+                why: "Account security.",
+              },
+            ],
+          }),
+      ],
+    });
+    assert.equal(await run(s.io, ["keep"]), 0);
+    assert.deepEqual(s.out, [
+      "bank.com  domain  last wrote 2026-10-16",
+      "",
+      "Kept for everyone:",
+      "no-reply@accounts.google.com  Account security.",
+    ]);
+  });
+
+  it("carries the listing on with --cursor, and says where the next page starts", async () => {
+    const s = await signedIn({
+      [api("list_kept")]: [
+        () => envelope({ kept: [], seeds: [] }, { next: "c2" }),
+      ],
+    });
+    assert.equal(
+      await run(s.io, ["keep", "--limit", "5", "--cursor", "c1"]),
+      0,
+    );
+    assert.deepEqual(JSON.parse(s.sent[0]!.body), { limit: 5, cursor: "c1" });
+    assert.ok(s.err.some((l) => l.includes("--cursor c2")));
+  });
+
+  it("refuses a file it cannot read in a sentence, sending nothing", async () => {
+    const s = await signedIn({});
+    s.io.read = async () => {
+      throw Object.assign(new Error("ENOENT: no such file"), {
+        code: "ENOENT",
+      });
+    };
+    assert.equal(await run(s.io, ["keep", "add", "missing.txt", "--yes"]), 1);
+    assert.deepEqual(s.err, ["brood could not read missing.txt (ENOENT)."]);
+    assert.equal(s.sent.length, 0);
+  });
+
+  it("checks a file's list, asks, and adds it on a yes", async () => {
+    const s = await signedIn({
+      [api("keep")]: [
+        () =>
+          keepAnswer(true, [
+            ["alice@acme.com", "added"],
+            ["bank.com", "already_listed"],
+          ]),
+        () =>
+          keepAnswer(false, [
+            ["alice@acme.com", "added"],
+            ["bank.com", "already_listed"],
+          ]),
+      ],
+    });
+    const asked: string[] = [];
+    s.io.read = async (path) => {
+      assert.equal(path, "kept.txt");
+      return "alice@acme.com\nbank.com\n";
+    };
+    s.io.ask = async (q) => (asked.push(q), "y");
+    assert.equal(await run(s.io, ["keep", "add", "kept.txt"]), 0);
+    assert.deepEqual(
+      s.sent.map((x) => JSON.parse(x.body)),
+      [
+        { lines: "alice@acme.com\nbank.com\n", check: true },
+        { lines: "alice@acme.com\nbank.com\n" },
+      ],
+    );
+    assert.deepEqual(asked, ["Keep one? [y/N] "]);
+    assert.deepEqual(s.out, [
+      "line 1  alice@acme.com  to add",
+      "line 2  bank.com        already kept",
+      "Kept one. Brood never files their mail.",
+    ]);
+  });
+
+  it("adds nothing when the answer is not yes", async () => {
+    const s = await signedIn({
+      [api("keep")]: [() => keepAnswer(true, [["alice@acme.com", "added"]])],
+    });
+    s.io.read = async () => "alice@acme.com";
+    s.io.ask = async () => "";
+    assert.equal(await run(s.io, ["keep", "add", "kept.txt"]), 0);
+    assert.equal(s.sent.length, 1);
+    assert.equal(s.out.at(-1), "Nothing added.");
+  });
+
+  it("asks nothing when the check finds nothing new", async () => {
+    const s = await signedIn({
+      [api("keep")]: [() => keepAnswer(true, [["bank.com", "already_listed"]])],
+    });
+    s.io.read = async () => "bank.com";
+    s.io.ask = async () => assert.fail("asked with nothing to add");
+    assert.equal(await run(s.io, ["keep", "add", "kept.txt"]), 0);
+    assert.equal(s.out.at(-1), "Nothing new to keep.");
+  });
+
+  it("stops at the check with --check, asking nothing", async () => {
+    const s = await signedIn({
+      [api("keep")]: [() => keepAnswer(true, [["nodot", "unrenderable"]])],
+    });
+    s.io.input = async () => "nodot";
+    assert.equal(await run(s.io, ["keep", "add", "--check"]), 0);
+    assert.deepEqual(JSON.parse(s.sent[0]!.body), {
+      lines: "nodot",
+      check: true,
+    });
+    assert.deepEqual(s.out, [
+      "line 1  nodot  refused: a filter cannot hold it exactly",
+    ]);
+  });
+
+  it("refuses a list from standard input without --yes, sending nothing, since nobody can be asked there", async () => {
+    const s = await signedIn({});
+    s.io.input = async () => "alice@acme.com";
+    s.io.ask = async () => assert.fail("asked while reading standard input");
+    assert.equal(await run(s.io, ["keep", "add"]), 1);
+    assert.equal(s.sent.length, 0);
+    assert.match(s.err.join("\n"), /cannot ask while it reads the list/);
+  });
+
+  it("adds a list from standard input with --yes, saying each line", async () => {
+    const s = await signedIn({
+      [api("keep")]: [
+        () =>
+          keepAnswer(false, [
+            ["alice@acme.com", "added"],
+            ["@bank.com", "added"],
+          ]),
+      ],
+    });
+    s.io.input = async () => "alice@acme.com\n@bank.com";
+    assert.equal(await run(s.io, ["keep", "add", "--yes"]), 0);
+    assert.deepEqual(JSON.parse(s.sent[0]!.body), {
+      lines: "alice@acme.com\n@bank.com",
+    });
+    assert.deepEqual(s.out, [
+      "line 1  alice@acme.com  added",
+      "line 2  @bank.com       added",
+      "Kept 2. Brood never files their mail.",
+    ]);
+  });
+
+  it("refuses a file's list when nobody is at a terminal to ask, sending nothing", async () => {
+    const s = await signedIn({});
+    s.io.read = async () => "alice@acme.com";
+    assert.equal(await run(s.io, ["keep", "add", "kept.txt"]), 1);
+    assert.equal(s.sent.length, 0);
+    assert.match(s.err.join("\n"), /Nobody is at a terminal to ask/);
+  });
+
+  it("says nothing was added when a filter could not change", async () => {
+    const s = await signedIn({
+      [api("keep")]: [
+        () => keepAnswer(false, [["alice@acme.com", "not_in_force"]], false),
+      ],
+    });
+    s.io.input = async () => "alice@acme.com";
+    assert.equal(await run(s.io, ["keep", "add", "--yes"]), 0);
+    assert.match(s.out.at(-1)!, /^Nothing was added: one of Brood's filters/);
+  });
+
+  it("refuses what it cannot mean: a verb it lacks, both of --check and --yes, either on the listing, and an empty list", async () => {
+    for (const argv of [
+      ["keep", "remove"],
+      ["keep", "add", "--check", "--yes"],
+      ["keep", "--yes"],
+      ["keep", "add", "a.txt", "b.txt"],
+      ["keep", "add", "a.txt", "--yes", "--limit", "5"],
+    ]) {
+      const s = await signedIn({});
+      s.io.read = async () => "alice@acme.com";
+      assert.equal(await run(s.io, argv), 1, argv.join(" "));
+      assert.equal(s.sent.length, 0, argv.join(" "));
+    }
+    const s = await signedIn({});
+    s.io.input = async () => "\n  \n";
+    assert.equal(await run(s.io, ["keep", "add", "--yes"]), 1);
+    assert.match(s.err.join("\n"), /holds no addresses or domains/);
+  });
+});

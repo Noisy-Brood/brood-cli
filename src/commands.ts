@@ -4,6 +4,7 @@ import {
   type Answers,
   type Classification,
   type Envelope,
+  type KeepOutcome,
   type Rule,
 } from "./brood/api/src/client.ts";
 import { API_PAGE_MAX, API_STRETCH_DAYS, PORTRAIT_DAYS } from "./brood/figures/index.ts";
@@ -27,6 +28,8 @@ export type Options = {
   week?: string;
   sender?: string;
   classification?: string;
+  check?: boolean;
+  yes?: boolean;
 };
 
 type Run = (
@@ -570,6 +573,140 @@ const unhush: Run = async (io, style, options, args) => {
   });
 };
 
+/** What became of a line, in words: `keep`'s answer for each. */
+const KEPT: Record<KeepOutcome, string> = {
+  added: "added",
+  already_listed: "already kept",
+  repeated: "repeats an earlier line",
+  not_in_force: "not added",
+  invalid_address: "refused: not an address",
+  invalid_domain: "refused: not a domain",
+  invalid_pattern: "refused: not a pattern",
+  unrenderable: "refused: a filter cannot hold it exactly",
+};
+
+const lines = (io: Io, style: Style, k: Answers["keep"]) =>
+  rows(
+    io,
+    k.lines.map((l) => [
+      dim(style, `line ${l.line}`),
+      l.text,
+      k.checked && l.outcome === "added" ? "to add" : KEPT[l.outcome],
+    ]),
+  );
+
+const many = (n: number) => (n === 1 ? "one" : String(n));
+
+/**
+ * `brood keep add`: the never-quiet list's paste, as the app has it, checked
+ * first and added on a yes. A list read from standard input leaves nobody to
+ * ask there, so it is added only with `--yes`; `--check` stops at the check.
+ */
+async function keepAdd(
+  io: Io,
+  style: Style,
+  options: Options,
+  args: string[],
+): Promise<void> {
+  if (args.length > 1)
+    throw new Refusal("Name one file, or none for standard input.");
+  if (options.check && options.yes)
+    throw new Refusal("--check and --yes ask for opposite things: give one.");
+  without(options, ["limit", "cursor"], "brood keep add");
+  const [file] = args;
+  let given: string;
+  try {
+    given = file === undefined ? await io.input() : await io.read(file);
+  } catch (e) {
+    // The code alone, such as ENOENT: the path is the person's own, said back cleaned.
+    const code =
+      e instanceof Error && "code" in e && typeof e.code === "string"
+        ? ` (${e.code})`
+        : "";
+    throw new Refusal(
+      `brood could not read ${file === undefined ? "standard input" : clean(file)}${code}.`,
+    );
+  }
+  if (!given.trim())
+    throw new Refusal(
+      `${file === undefined ? "Standard input" : clean(file)} holds no addresses or domains.`,
+    );
+  const body = { ...owner(options), lines: given };
+  if (options.yes) {
+    const added = await call(io, "keep", body);
+    return shown(io, style, added, (k) => {
+      lines(io, style, k);
+      said(io, k);
+    });
+  }
+  const asking = file === undefined ? null : io.ask;
+  if (!options.check && (style.json || asking === null))
+    throw new Refusal(
+      style.json
+        ? "With --json, give --check to see what would be added, or --yes to add it."
+        : file === undefined
+          ? "brood cannot ask while it reads the list from standard input: give --yes to add it, or --check to see what would be added."
+          : "Nobody is at a terminal to ask: give --yes to add the list, or --check to see what would be added.",
+    );
+  const checked = await call(io, "keep", { ...body, check: true });
+  shown(io, style, checked, (k) => lines(io, style, k));
+  if (options.check || asking === null) return;
+  const fresh = checked.data.lines.filter((l) => l.outcome === "added").length;
+  if (fresh === 0) return io.out("Nothing new to keep.");
+  const yes = await asking(`Keep ${many(fresh)}? [y/N] `);
+  if (!/^y(es)?$/i.test(yes.trim())) return io.out("Nothing added.");
+  const added = await call(io, "keep", body);
+  shown(io, style, added, (k) => {
+    if (!k.in_force) lines(io, style, k);
+    said(io, k);
+  });
+}
+
+/** What a list added comes to, in a sentence. */
+function said(io: Io, k: Answers["keep"]): void {
+  const added = k.lines.filter((l) => l.outcome === "added").length;
+  if (!k.in_force)
+    return io.out(
+      "Nothing was added: one of Brood's filters could not change, and the list holds only what every filter keeps. Try again later.",
+    );
+  io.out(
+    added === 0
+      ? "Nothing new to keep."
+      : `Kept ${many(added)}. Brood never files their mail.`,
+  );
+}
+
+/** `brood keep`, the never-quiet list; `brood keep add`, a list added to it. */
+const keep: Run = async (io, style, options, args) => {
+  const [verb, ...rest] = args;
+  if (verb === "add") return keepAdd(io, style, options, rest);
+  if (verb !== undefined)
+    throw new Refusal(`brood keep takes add, or nothing: not ${clean(verb)}.`);
+  without(options, ["check", "yes"], "brood keep");
+  const answer = await call(io, "list_kept", {
+    ...owner(options),
+    ...page(options),
+  });
+  shown(io, style, answer, (data) => {
+    if (!data.kept.length) io.out("Nothing of your own is on the list.");
+    rows(
+      io,
+      data.kept.map((k) => [
+        k.value,
+        k.kind,
+        k.last_wrote ? `last wrote ${day(k.last_wrote)}` : "",
+      ]),
+    );
+    if (!data.seeds.length) return;
+    io.out("");
+    io.out("Kept for everyone:");
+    rows(
+      io,
+      data.seeds.map((s) => [s.value, dim(style, s.why)]),
+    );
+  });
+};
+
 /** Each command, and the options it takes, so one it does not is refused rather than ignored. */
 export const COMMANDS: Record<string, { run: Run; takes: OptionName[] }> = {
   accounts: { run: accounts, takes: [] },
@@ -588,4 +725,5 @@ export const COMMANDS: Record<string, { run: Run; takes: OptionName[] }> = {
   rules: { run: rules, takes: ["classification", "limit", "cursor"] },
   hush: { run: hush, takes: [] },
   unhush: { run: unhush, takes: [] },
+  keep: { run: keep, takes: ["check", "yes", "limit", "cursor"] },
 };

@@ -63,6 +63,32 @@ export const DIRECTIONS = ["inbound", "outbound"] as const;
 /** How the person was addressed on a message. */
 export const ADDRESSED = ["to", "cc", "neither"] as const;
 
+/**
+ * What an entry on the never-quiet list names: one sender's address, a domain
+ * and everything under it, a pattern on an address's local part, or an
+ * address copied on a message, which keeps that mail alone in view (#663).
+ */
+export const KEPT_KINDS = ["address", "domain", "pattern", "copied"] as const;
+export type KeptKind = (typeof KEPT_KINDS)[number];
+
+/**
+ * What became of one line given to `keep`, or would, as the never-quiet
+ * list's paste says it in the app, which a test keeps equal: kept, there
+ * already, said twice, not in force since a filter could not change, or
+ * refused for what it is.
+ */
+export const KEEP_OUTCOMES = [
+  "added",
+  "already_listed",
+  "repeated",
+  "not_in_force",
+  "invalid_address",
+  "invalid_domain",
+  "invalid_pattern",
+  "unrenderable",
+] as const;
+export type KeepOutcome = (typeof KEEP_OUTCOMES)[number];
+
 /** A list of values as the reference writes them: each as code, `or` before the last. */
 export const listed = (values: readonly string[]) =>
   values.length < 2

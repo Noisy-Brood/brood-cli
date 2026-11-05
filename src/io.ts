@@ -16,6 +16,16 @@ export type Io = {
   err: (line: string) => void;
   /** Whether standard output is a terminal, so it may be dimmed. */
   tty: boolean;
+  /** All of standard input, for a list given there. */
+  input: () => Promise<string>;
+  /** A file's text, for a list named by its path. */
+  read: (path: string) => Promise<string>;
+  /**
+   * A question put at the terminal, answered with the line typed; null when
+   * standard input or standard error is not a terminal, so nobody is there
+   * to answer.
+   */
+  ask: ((question: string) => Promise<string>) | null;
 };
 
 /** A refusal said to the person in a sentence, with nothing else printed. */

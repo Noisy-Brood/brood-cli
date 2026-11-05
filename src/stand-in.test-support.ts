@@ -103,6 +103,15 @@ export function standIn(routes: Record<string, Answer[]>): Stand {
     out: (line) => void out.push(line),
     err: (line) => void err.push(line),
     tty: false,
+    // Nothing on standard input, no file and nobody to ask, unless a case
+    // gives one: a command that reaches for one unasked fails the case.
+    input: async () => {
+      throw new Error("stand-in: no standard input given");
+    },
+    read: async (path) => {
+      throw new Error(`stand-in: no file given at ${path}`);
+    },
+    ask: null,
   };
   return { io, sent, out, err, slept, dir, advance: (ms) => void (now += ms) };
 }

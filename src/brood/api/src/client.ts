@@ -4,6 +4,8 @@ import type {
   ClassificationReason,
   ClassificationState,
   DIRECTIONS,
+  KeepOutcome,
+  KeptKind,
   SenderScope,
   SenderTag,
   SHOWN,
@@ -60,8 +62,10 @@ export type Arguments = {
   list_rules: OwnerArgument & PageArguments & { classification?: string };
   get_rule: OwnerArgument & { id: string };
   end_session: { refresh_token: string };
+  list_kept: OwnerArgument & PageArguments;
   hush: OwnerArgument & { classification: string };
   unhush: OwnerArgument & { classification: string };
+  keep: OwnerArgument & { lines: string; check?: boolean };
 };
 
 /** A stretch of whole UTC days, each as YYYY-MM-DD, both counted. */
@@ -331,6 +335,29 @@ export type Unhush = {
   home_left: number;
 };
 
+/** The never-quiet list: the person's own entries, and those Brood keeps for everyone. */
+export type ListKept = {
+  kept: {
+    kind: KeptKind;
+    value: string;
+    added_at: string;
+    /** When a sender it covers last wrote, or null for none heard from. */
+    last_wrote: string | null;
+    /** For an address, the sender Brood knows by it, for `get_sender`; null otherwise. */
+    sender: string | null;
+  }[];
+  seeds: { kind: KeptKind; value: string; why: string }[];
+};
+
+/** What keeping a list of addresses and domains did, or would do. */
+export type Keep = {
+  /** Whether nothing was written: what keeping them would do. */
+  checked: boolean;
+  /** Whether every line marked added is kept, with every filter changed; null for a check. */
+  in_force: boolean | null;
+  lines: { line: number; text: string; outcome: KeepOutcome }[];
+};
+
 export type Answers = {
   describe_index: DescribeIndex;
   list_accounts: ListAccounts;
@@ -343,9 +370,11 @@ export type Answers = {
   list_quiet_senders: ListQuietSenders;
   list_rules: ListRules;
   get_rule: Rule;
+  list_kept: ListKept;
   end_session: EndSession;
   hush: Hush;
   unhush: Unhush;
+  keep: Keep;
 };
 
 /** The codes a problem carries, which clients branch on (DD21 §8, RFC 9457). */
