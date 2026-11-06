@@ -2,6 +2,7 @@
 import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { text } from "node:stream/consumers";
+import { keychainFor } from "./keychain.ts";
 import { run } from "./main.ts";
 
 process.exitCode = await run(
@@ -30,6 +31,7 @@ process.exitCode = await run(
             }
           }
         : null,
+    keychain: keychainFor(process.platform),
   },
   process.argv.slice(2),
 );

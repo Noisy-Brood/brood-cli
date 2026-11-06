@@ -61,23 +61,28 @@ Options
   --no-color             no dimming, as NO_COLOR also asks`;
 
 async function logout(io: Io): Promise<void> {
-  if (!(await readCredentials(io.env))) return io.err("Not signed in.");
+  if (!(await readCredentials(io))) {
+    // Nothing to end at Brood, but an item the keychain would not show is
+    // still asked to go (review of #1676).
+    await removeCredentials(io);
+    return io.err("Not signed in.");
+  }
   try {
     await call(io, "end_session", (held) => ({
       refresh_token: held.refresh_token,
     }));
   } catch (error) {
     // Forgotten only when nothing is left to end: a session Clerk has ended,
-    // or a program Brood refuses as revoked, whose file would otherwise leave
+    // or a program Brood refuses as revoked, whose stored session would leave
     // login refusing too. Anything else, Brood unreachable or failing, or
     // refusing a token just renewed, may leave the session live at Clerk,
-    // so the file stays and logging out again can end it.
+    // so the stored session stays and logging out again can end it.
     const over =
       error instanceof SessionEnded ||
       (error instanceof Refused && error.code === "credential_revoked");
     if (!over) throw error;
   }
-  await removeCredentials(io.env);
+  await removeCredentials(io);
   io.err("Signed out. This session can no longer be renewed.");
 }
 

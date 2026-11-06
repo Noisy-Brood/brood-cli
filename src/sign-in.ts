@@ -77,7 +77,7 @@ export async function login(
   readOnly: boolean,
   noColor = false,
 ): Promise<void> {
-  if (await readCredentials(io.env))
+  if (await readCredentials(io))
     throw new Refusal(
       "Already signed in. Run brood logout first, which ends this session.",
     );
@@ -124,7 +124,7 @@ export async function login(
       throw new Refusal(
         "The sign-in service did not finish the sign-in. Run brood login again.",
       );
-    await writeCredentials(io.env, credentials);
+    await writeCredentials(io, credentials);
     const color = colorOn(io, noColor);
     for (const line of wrenIn(color ? depthOf(io.env) : "none")) io.err(line);
     io.err("");
@@ -142,7 +142,7 @@ export async function login(
 
 /** The session, refreshed first if its access token is about to expire. */
 export async function freshCredentials(io: Io): Promise<Credentials> {
-  const stored = await readCredentials(io.env);
+  const stored = await readCredentials(io);
   if (!stored) throw new Refusal("Not signed in. Run brood login.");
   return stored.expires_at - EARLY_MS > io.now() ? stored : refresh(io, stored);
 }
@@ -159,12 +159,12 @@ export async function refresh(
   });
   const credentials = credentialsOf(answer.body, io.now());
   if (credentials) {
-    await writeCredentials(io.env, credentials);
+    await writeCredentials(io, credentials);
     return credentials;
   }
   if (answer.body.error === "invalid_grant") {
-    // The session is over at Clerk, so the file holds nothing that works.
-    await removeCredentials(io.env);
+    // The session is over at Clerk, so the stored session holds nothing that works.
+    await removeCredentials(io);
     throw new SessionEnded(
       "This session has ended. Run brood login to sign in again.",
     );

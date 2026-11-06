@@ -1,4 +1,5 @@
 import type { ProblemCode } from "./brood/api/src/client.ts";
+import type { Keychain } from "./keychain.ts";
 import type { StoreEnv } from "./store.ts";
 
 /**
@@ -26,6 +27,8 @@ export type Io = {
    * to answer.
    */
   ask: ((question: string) => Promise<string>) | null;
+  /** The OS keychain the session is kept in, or null to keep it in the file (DD10 §6). */
+  keychain: Keychain | null;
 };
 
 /** A refusal said to the person in a sentence, with nothing else printed. */

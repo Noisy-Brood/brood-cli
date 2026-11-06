@@ -53,7 +53,7 @@ describe("brood login (#1339)", () => {
     );
     // RFC 8628: slow_down adds five seconds to every wait after it.
     assert.deepEqual(s.slept, [5000, 5000, 10000]);
-    const stored = await readCredentials(s.io.env);
+    const stored = await readCredentials(s.io);
     assert.equal(stored?.refresh_token, "refresh-one");
     assert.equal(stored?.expires_at, NOW + 20_000 + 86_400_000);
     assert.equal(statSync(credentialsPath(s.io.env)).mode & 0o777, 0o600);
@@ -89,7 +89,7 @@ describe("brood login (#1339)", () => {
     });
     assert.equal(await run(s.io, ["login"]), 1);
     assert.ok(s.err.some((l) => l.includes("expired before it was approved")));
-    assert.equal(await readCredentials(s.io.env), null);
+    assert.equal(await readCredentials(s.io), null);
   });
 
   it("says so when the sign-in is declined", async () => {
@@ -132,10 +132,7 @@ describe("the stored session (#1339)", () => {
       /grant_type=refresh_token&refresh_token=refresh-one/,
     );
     assert.equal(s.sent[1]!.headers.authorization, "Bearer access-two");
-    assert.equal(
-      (await readCredentials(s.io.env))?.refresh_token,
-      "refresh-two",
-    );
+    assert.equal((await readCredentials(s.io))?.refresh_token, "refresh-two");
   });
 
   it("is renewed once when Brood finds the token lapsed, and the call made again", async () => {
@@ -198,6 +195,37 @@ describe("brood logout (#1339)", () => {
       refresh_token: "refresh-one",
     });
     assert.equal(existsSync(credentialsPath(s.io.env)), false);
+  });
+
+  it("logs out with a keychain item brood cannot read, ending the file's session and forgetting both (#1366)", async () => {
+    const s = await signedIn({
+      [api("end_session")]: [() => envelope({ ended: true }, { accounts: [] })],
+    });
+    let held: string | null = '{"access_token":"cut sho';
+    s.io.keychain = {
+      read: async () => held,
+      write: async () => false,
+      remove: async () => ((held = null), true),
+    };
+    assert.equal(await run(s.io, ["logout"]), 0);
+    assert.deepEqual(JSON.parse(s.sent[0]!.body), {
+      refresh_token: "refresh-one",
+    });
+    assert.equal(held, null);
+    assert.equal(existsSync(credentialsPath(s.io.env)), false);
+  });
+
+  it("asks the keychain to forget brood's item even when it shows no session (review of #1676)", async () => {
+    const s = standIn({});
+    let asked = 0;
+    s.io.keychain = {
+      read: async () => null,
+      write: async () => false,
+      remove: async () => (asked++, true),
+    };
+    assert.equal(await run(s.io, ["logout"]), 0);
+    assert.deepEqual(s.err, ["Not signed in."]);
+    assert.equal(asked, 1);
   });
 
   it("ends the refresh token it holds after a renewal, not the one renewed away", async () => {
@@ -269,10 +297,7 @@ describe("a renewed session Brood still refuses (#1339)", () => {
       ],
     });
     assert.equal(await run(s.io, ["logout"]), 1);
-    assert.equal(
-      (await readCredentials(s.io.env))?.refresh_token,
-      "refresh-two",
-    );
+    assert.equal((await readCredentials(s.io))?.refresh_token, "refresh-two");
     assert.ok(!s.err.some((l) => l.startsWith("Signed out")));
   });
 });

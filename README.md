@@ -42,9 +42,10 @@ signed in to Noisy Brood, and approve the code. Nothing is typed into the
 terminal but the command. `brood login --read-only` asks for a session that
 can only read.
 
-The session is kept in `~/.config/brood/credentials.json` (or under
-`XDG_CONFIG_HOME`), readable only by you, and `brood logout` ends it at Brood
-before forgetting it. To shut it out at once, revoke it on your account page.
+The session is kept in your keychain: macOS's, or on Linux the desktop's
+Secret Service. Where there is none, it goes in `~/.config/brood/credentials.json`
+(or under `XDG_CONFIG_HOME`), readable only by you. `brood logout` ends it at
+Brood before forgetting it. To shut it out at once, revoke it on your account page.
 
 ## Ask
 

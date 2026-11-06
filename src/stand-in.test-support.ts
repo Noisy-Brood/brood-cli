@@ -112,6 +112,9 @@ export function standIn(routes: Record<string, Answer[]>): Stand {
       throw new Error(`stand-in: no file given at ${path}`);
     },
     ask: null,
+    // The file, unless a case gives a keychain: a test never reaches the
+    // machine's own.
+    keychain: null,
   };
   return { io, sent, out, err, slept, dir, advance: (ms) => void (now += ms) };
 }
@@ -129,7 +132,7 @@ export async function signedIn(
   session: Credentials = SESSION,
 ): Promise<Stand> {
   const stand = standIn(routes);
-  await writeCredentials(stand.io.env, session);
+  await writeCredentials(stand.io, session);
   return stand;
 }
 

@@ -11,11 +11,15 @@ import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { Refusal } from "./io.ts";
+import type { Keychain } from "./keychain.ts";
 
 /**
- * Where the session is kept between commands (DD10 §6): a file only its owner
- * can read, at `${XDG_CONFIG_HOME:-~/.config}/brood/credentials.json`, never
- * an environment variable. The OS keychain, where one exists, is #1366.
+ * Where the session is kept between commands (DD10 §6): the OS keychain where
+ * one answers (#1366), and otherwise a file only its owner can read, at
+ * `${XDG_CONFIG_HOME:-~/.config}/brood/credentials.json`; never an
+ * environment variable. A session kept in the file before a keychain was
+ * used is read from there, and moves to the keychain the next time it is
+ * written.
  */
 
 export type Credentials = {
@@ -27,6 +31,9 @@ export type Credentials = {
 };
 
 export type StoreEnv = { XDG_CONFIG_HOME?: string; HOME?: string };
+
+/** Where the session can be kept: the keychain, if there is one, and the file's place. */
+export type Store = { env: StoreEnv; keychain: Keychain | null };
 
 export const credentialsPath = (env: StoreEnv): string =>
   join(
@@ -47,10 +54,28 @@ const isCredentials = (v: unknown): v is Credentials =>
   "scope" in v &&
   typeof v.scope === "string";
 
-/** The stored session, or null when there is none. */
+/** The stored session, or null when there is none: the keychain's, else the file's. */
 export async function readCredentials(
-  env: StoreEnv,
+  store: Store,
 ): Promise<Credentials | null> {
+  const held = await store.keychain?.read();
+  if (held != null) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(held);
+    } catch {
+      parsed = null;
+    }
+    if (isCredentials(parsed)) return parsed;
+    // Brood's own item, unreadable, such as one a keychain cut short: it can
+    // open nothing, and refusing over it would refuse logout too. Removed, and
+    // the file, if any, is the session; one that will not go is said.
+    if (!(await store.keychain?.remove())) throw new Refusal(STUCK);
+  }
+  return readFileCredentials(store.env);
+}
+
+async function readFileCredentials(env: StoreEnv): Promise<Credentials | null> {
   const path = credentialsPath(env);
   let mode: number;
   try {
@@ -80,8 +105,33 @@ export async function readCredentials(
   return parsed;
 }
 
-/** Writes the session where only its owner can read it, whole or not at all. */
+/**
+ * Writes the session to the keychain, read back to be sure it took, and then
+ * removes any file an earlier session left; with no keychain, or one that did
+ * not keep it, to the file, whole or not at all.
+ */
 export async function writeCredentials(
+  store: Store,
+  credentials: Credentials,
+): Promise<void> {
+  const secret = JSON.stringify(credentials);
+  if (store.keychain) {
+    if (
+      (await store.keychain.write(secret)) &&
+      (await store.keychain.read()) === secret
+    ) {
+      await removeFileCredentials(store.env);
+      return;
+    }
+    // Whatever it kept, an older session or part of this one, would be read
+    // ahead of the file: it goes first, or the file is not written, since a
+    // session read past would be no session at all.
+    if (!(await gone(store.keychain))) throw new Refusal(STUCK);
+  }
+  await writeFileCredentials(store.env, credentials);
+}
+
+async function writeFileCredentials(
   env: StoreEnv,
   credentials: Credentials,
 ): Promise<void> {
@@ -102,11 +152,30 @@ export async function writeCredentials(
   }
 }
 
+/** Forgets the session: in the keychain, and in any file it was ever kept in. */
+export async function removeCredentials(store: Store): Promise<void> {
+  await removeFileCredentials(store.env);
+  if (store.keychain && !(await gone(store.keychain))) throw new Refusal(STUCK);
+}
+
 /**
- * Forgets the session: the file, and any draft of it a run that stopped
- * between writing and renaming left behind, which holds a token too.
+ * Whether the keychain holds nothing brood would read ahead of its file:
+ * its item removed, or none it will show. One it cannot reach, with no
+ * `secret-tool` or no Secret Service running, shows none, and reads fall
+ * back to the file too, so nothing there can shadow it (review of #1676).
  */
-export async function removeCredentials(env: StoreEnv): Promise<void> {
+const gone = async (keychain: Keychain): Promise<boolean> =>
+  (await keychain.remove()) || (await keychain.read()) === null;
+
+/** What brood says when the keychain will not let go of its item. */
+const STUCK =
+  "Your keychain holds a brood session it will not let go of. Unlock the keychain, or delete the item named brood (com.noisybrood.cli), then run brood login.";
+
+/**
+ * The file, and any draft of it a run that stopped between writing and
+ * renaming left behind, which holds a token too.
+ */
+async function removeFileCredentials(env: StoreEnv): Promise<void> {
   const path = credentialsPath(env);
   const draft = `${basename(path)}.`;
   let names: string[] = [];
