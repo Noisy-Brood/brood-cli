@@ -321,7 +321,7 @@ export type EndSession = { ended: true };
 export type Hush = {
   id: string;
   state: "active" | "quieted";
-  /** Whether it was filed already, so nothing was installed. */
+  /** Whether it was filed already, so nothing was installed: one active, in every mailbox its mail arrived in. */
   already: boolean;
   rules: { id: string; account: string }[];
   /** Mailboxes where its filter could not be installed; the rest are filed. */
