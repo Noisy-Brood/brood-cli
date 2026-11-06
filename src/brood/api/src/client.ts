@@ -64,7 +64,11 @@ export type Arguments = {
   get_rule: OwnerArgument & { id: string };
   end_session: { refresh_token: string };
   list_kept: OwnerArgument & PageArguments;
-  hush: OwnerArgument & { classification: string };
+  hush: OwnerArgument &
+    (
+      | { classification: string; sender?: never }
+      | { sender: string; classification?: never }
+    );
   unhush: OwnerArgument & { classification: string };
   keep: OwnerArgument & { lines: string; check?: boolean };
   add_customers: OwnerArgument & { lines: string; check?: boolean };
@@ -322,6 +326,8 @@ export type Hush = {
   rules: { id: string; account: string }[];
   /** Mailboxes where its filter could not be installed; the rest are filed. */
   failed: string[];
+  /** What was filed: its home's path, and the domain or address it covers. */
+  sender_written: { path: string; subject: string };
 };
 
 /** A classification unhushed, or one that was not filed. */

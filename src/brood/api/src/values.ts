@@ -25,6 +25,7 @@ export const CLASSIFICATION_REASONS = [
   "restored",
   "kept_out",
   "adopted",
+  "by_hand",
 ] as const;
 export type ClassificationReason = (typeof CLASSIFICATION_REASONS)[number];
 

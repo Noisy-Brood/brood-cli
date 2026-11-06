@@ -243,12 +243,15 @@ describe("hush and unhush (#1339, DD10 §3)", () => {
             already: false,
             rules: [{ id: ID(7), account: "acc-1" }],
             failed: [],
+            sender_written: { path: "external/stripe", subject: "stripe.com" },
           }),
       ],
     });
     assert.equal(await run(s.io, ["hush", "stripe.com"]), 0);
     assert.deepEqual(JSON.parse(s.sent[1]!.body), { classification: ID(2) });
-    assert.deepEqual(s.out, ["Filed stripe.com out of your inbox."]);
+    assert.deepEqual(s.out, [
+      "Filed stripe.com out of your inbox, under external/stripe.",
+    ]);
   });
 
   it("lists the choices when several cover the name, and acts on none", async () => {
@@ -280,12 +283,43 @@ describe("hush and unhush (#1339, DD10 §3)", () => {
     assert.ok(s.err.some((l) => l.includes("with the id of the one you mean")));
   });
 
-  it("says Brood proposed nothing for a sender it has no classification of", async () => {
+  it("files a sender Brood proposed nothing for by hand, found as brood senders finds one (#1355)", async () => {
     const s = await signedIn({
       [api("list_classifications")]: [() => envelope({ classifications: [] })],
+      [api("list_senders")]: [
+        () =>
+          envelope(
+            senders([
+              { root: "linear.app", messages: 3 },
+              { root: "stripe.com", messages: 9 },
+            ]),
+          ),
+      ],
+      [api("hush")]: [
+        () =>
+          envelope({
+            id: ID(5),
+            state: "active",
+            already: false,
+            rules: [{ id: ID(7), account: "acc-1" }],
+            failed: [],
+            sender_written: { path: "external/stripe", subject: "stripe.com" },
+          }),
+      ],
     });
-    assert.equal(await run(s.io, ["hush", "stripe.com"]), 1);
-    assert.deepEqual(s.err, ["Brood has proposed nothing for stripe.com."]);
+    assert.equal(await run(s.io, ["hush", "stripe.com"]), 0);
+    assert.deepEqual(JSON.parse(s.sent.at(-1)!.body), { sender: ID(2) });
+    assert.deepEqual(s.out, [
+      "Filed stripe.com out of your inbox, under external/stripe.",
+    ]);
+  });
+
+  it("refuses an id that names no classification, filing nothing", async () => {
+    const s = await signedIn({
+      [api("get_classification")]: [() => problem(404, "not_found")],
+    });
+    assert.equal(await run(s.io, ["hush", ID(9)]), 1);
+    assert.ok(!s.sent.some((x) => x.url === api("hush")));
   });
 
   it("reads every page before choosing, so a match on a later page is not missed", async () => {
@@ -309,6 +343,7 @@ describe("hush and unhush (#1339, DD10 §3)", () => {
             already: true,
             rules: [],
             failed: [],
+            sender_written: { path: "external/stripe", subject: "stripe.com" },
           }),
       ],
     });
@@ -1281,5 +1316,47 @@ describe("customers add (#659)", () => {
       assert.equal(await run(s.io, argv), 1, argv.join(" "));
       assert.equal(s.sent.length, 0, argv.join(" "));
     }
+  });
+});
+
+describe("hush by hand, under a root filed address by address (#1355)", () => {
+  it("says what was filed when it is an address rather than the root named", async () => {
+    const s = await signedIn({
+      [api("list_classifications")]: [() => envelope({ classifications: [] })],
+      [api("list_senders")]: [
+        () => envelope(senders([{ root: "vendor.com", messages: 9 }])),
+      ],
+      [api("hush")]: [
+        () =>
+          envelope({
+            id: ID(5),
+            state: "active",
+            already: false,
+            rules: [{ id: ID(7), account: "acc-1" }],
+            failed: [],
+            sender_written: {
+              path: "external/news@vendor.com",
+              subject: "news@vendor.com",
+            },
+          }),
+      ],
+    });
+    assert.equal(await run(s.io, ["hush", "vendor.com"]), 0);
+    assert.deepEqual(s.out, [
+      "Filed news@vendor.com out of your inbox, under external/news@vendor.com.",
+      "Brood files vendor.com address by address, since you write to someone there or it is shared, so only news@vendor.com is filed.",
+    ]);
+  });
+
+  it("says why when Brood would never file the sender, rather than calling the name invalid", async () => {
+    const s = await signedIn({
+      [api("list_classifications")]: [() => envelope({ classifications: [] })],
+      [api("list_senders")]: [
+        () => envelope(senders([{ root: "vendor.com", messages: 9 }])),
+      ],
+      [api("hush")]: [() => problem(400, "invalid_argument", "sender")],
+    });
+    assert.equal(await run(s.io, ["hush", "vendor.com"]), 1);
+    assert.match(s.err.join("\n"), /^Brood does not file vendor\.com by hand/);
   });
 });

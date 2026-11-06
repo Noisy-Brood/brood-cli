@@ -10,7 +10,7 @@ import {
 } from "./brood/api/src/client.ts";
 import { API_PAGE_MAX, API_STRETCH_DAYS, PORTRAIT_DAYS } from "./brood/figures/index.ts";
 import { call } from "./client.ts";
-import { clean, Refusal, type Io } from "./io.ts";
+import { clean, Refusal, Refused, type Io } from "./io.ts";
 import { day, dim, json, more, rows, state, type Style } from "./out.ts";
 
 /**
@@ -196,20 +196,40 @@ async function chosen(
   style: Style,
   options: Options,
   name: string,
+  verb: "hush",
+): Promise<string | null>;
+async function chosen(
+  io: Io,
+  style: Style,
+  options: Options,
+  name: string,
+  verb: "unhush",
+): Promise<string>;
+/**
+ * The one classification a name means. For `hush`, none is null, so the
+ * sender is filed by hand (#1355); for `unhush`, none is a refusal.
+ */
+async function chosen(
+  io: Io,
+  style: Style,
+  options: Options,
+  name: string,
   verb: "hush" | "unhush",
-): Promise<string> {
+): Promise<string | null> {
   const all = await classificationsOf(io, options, name);
   const found =
     verb === "unhush"
       ? all.filter((c) => c.state === "active" || c.state === "quieted")
       : all;
   const [only, ...others] = found;
-  if (!only)
+  if (!only) {
+    if (verb === "hush" && !UUID.test(name)) return null;
     throw new Refusal(
       verb === "hush"
-        ? `Brood has proposed nothing for ${clean(name)}.`
+        ? `Brood has no classification ${clean(name)}.`
         : `Nothing is filed for ${clean(name)}.`,
     );
+  }
   if (!others.length) return only.id;
   io.err(`Several classifications cover ${clean(name)}:`);
   rows(
@@ -536,16 +556,46 @@ const hush: Run = async (io, style, options, args) => {
     "sender, by its root domain or address, or a classification by its id",
   );
   const id = await chosen(io, style, options, name, "hush");
-  const answer = await call(io, "hush", {
-    ...owner(options),
-    classification: id,
-  });
+  // None proposed: the sender itself, found over the days its portrait
+  // covers, as brood senders finds one, and filed by hand (DD21 §5, #1355).
+  let answer: Envelope<Answers["hush"]>;
+  try {
+    answer = await call(io, "hush", {
+      ...owner(options),
+      ...(id !== null
+        ? { classification: id }
+        : {
+            sender: (
+              await senderOf(io, options, name, {
+                since: daysBack(io, PORTRAIT_DAYS),
+              })
+            ).sender,
+          }),
+    });
+  } catch (error) {
+    // A sender the engine would never file, said as why rather than as an
+    // argument refused.
+    if (
+      id === null &&
+      error instanceof Refused &&
+      error.code === "invalid_argument"
+    )
+      throw new Refusal(
+        `Brood does not file ${clean(name)} by hand: it is a customer's, someone you write to or a colleague, one of your own filters already acts on it, or its address is one a filter cannot hold exactly.`,
+      );
+    throw error;
+  }
   shown(io, style, answer, (h) => {
+    const what = h.sender_written.subject;
     io.out(
       h.already
-        ? `${clean(name)} was filed already.`
-        : `Filed ${clean(name)} out of your inbox.`,
+        ? `${what} was filed already.`
+        : `Filed ${what} out of your inbox, under ${h.sender_written.path}.`,
     );
+    if (!same(what, name) && !UUID.test(name))
+      io.out(
+        `Brood files ${clean(name)} address by address, since you write to someone there or it is shared, so only ${what} is filed.`,
+      );
     if (h.failed.length)
       io.out(
         `Brood could not install its filter in ${h.failed.length === 1 ? "one mailbox" : `${h.failed.length} mailboxes`}: ${h.failed.join(", ")}.`,

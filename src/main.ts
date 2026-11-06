@@ -31,7 +31,7 @@ Structure
   brood rules [<id>]                the filters Brood installed
 
 Suppression, which changes your mailbox
-  brood hush <domain|address|id>    file what Brood proposed for a sender
+  brood hush <domain|address|id>    file a sender, proposed or not
   brood unhush <domain|address|id>  undo the filing
 
 Keeping in view, which changes Brood's filters so it never files these senders
