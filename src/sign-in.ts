@@ -130,7 +130,7 @@ export async function login(
     io.err("");
     io.err(
       acts(credentials.scope)
-        ? "Signed in. brood can read your index, hush and unhush senders, keep senders in view, and add customers."
+        ? "Signed in. brood can read your index, hush and unhush senders, keep senders in view, and add relationships."
         : "Signed in. brood can read your index, and change nothing.",
     );
     return;

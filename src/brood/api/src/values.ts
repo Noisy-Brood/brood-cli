@@ -17,7 +17,7 @@ export type ClassificationState = (typeof CLASSIFICATION_STATES)[number];
 export const CLASSIFICATION_REASONS = [
   "volume",
   "subdomain_split",
-  "customer",
+  "relationship",
   "silence",
   "correction_streak",
   "reproposed",
@@ -43,7 +43,7 @@ export const TONE_TITLES: Record<Tone, string> = {
 
 /** What a sender is, as the app tags it. */
 export const SENDER_TAGS = [
-  "customer",
+  "relationship",
   "filed",
   "quieted",
   "correspondence",
@@ -91,12 +91,12 @@ export const KEEP_OUTCOMES = [
 export type KeepOutcome = (typeof KEEP_OUTCOMES)[number];
 
 /**
- * What became of one line given to `add_customers`, or would, as the
- * Customers page's paste says it, which a test keeps equal: a customer, one
+ * What became of one line given to `add_relationships`, or would, as the
+ * Relationships page's paste says it, which a test keeps equal: a relationship, one
  * already, a domain that names no organisation, one that cannot be read, a
  * site's address, or a line Brood failed on.
  */
-export const CUSTOMER_OUTCOMES = [
+export const RELATIONSHIP_OUTCOMES = [
   "added",
   "already",
   "shared",
@@ -104,7 +104,7 @@ export const CUSTOMER_OUTCOMES = [
   "address",
   "failed",
 ] as const;
-export type CustomerOutcome = (typeof CUSTOMER_OUTCOMES)[number];
+export type RelationshipOutcome = (typeof RELATIONSHIP_OUTCOMES)[number];
 
 /** A list of values as the reference writes them: each as code, `or` before the last. */
 export const listed = (values: readonly string[]) =>

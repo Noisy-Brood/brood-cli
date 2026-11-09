@@ -183,7 +183,7 @@ describe("reading the index (#1339)", () => {
               domain: "stripe.com",
               root: "stripe.com",
               roots: ["stripe.com"],
-              customer: null,
+              relationship: null,
               never_quiet_roots: [],
               never_quiet_addresses: [],
             },
@@ -423,7 +423,7 @@ describe("the command line itself (#1339)", () => {
 
 const hostile = "evil\u001b]0;owned\u0007\u202e.example";
 
-const sender = (customer: string | null) => ({
+const sender = (relationship: string | null) => ({
   id: ID(2),
   scope: "domain",
   messages: 4,
@@ -447,7 +447,7 @@ const sender = (customer: string | null) => ({
     domain: "x.example",
     root: "x.example",
     roots: ["x.example"],
-    customer,
+    relationship,
     never_quiet_roots: [],
     never_quiet_addresses: [],
   },
@@ -1205,7 +1205,7 @@ describe("keep (#659)", () => {
   });
 });
 
-const customersAnswer = (
+const relationshipsAnswer = (
   checked: boolean,
   outcomes: [string, string][],
   later: boolean | null = checked ? null : false,
@@ -1220,17 +1220,17 @@ const customersAnswer = (
     })),
   });
 
-describe("customers add (#659)", () => {
-  it("checks a file's customers, asks, and adds them on a yes", async () => {
+describe("relationships add (#659)", () => {
+  it("checks a file's relationships, asks, and adds them on a yes", async () => {
     const s = await signedIn({
-      [api("add_customers")]: [
+      [api("add_relationships")]: [
         () =>
-          customersAnswer(true, [
+          relationshipsAnswer(true, [
             ["Acme: acme.com", "added"],
             ["gmail.com", "shared"],
           ]),
         () =>
-          customersAnswer(false, [
+          relationshipsAnswer(false, [
             ["Acme: acme.com", "added"],
             ["gmail.com", "shared"],
           ]),
@@ -1239,27 +1239,36 @@ describe("customers add (#659)", () => {
     const asked: string[] = [];
     s.io.read = async () => "Acme: acme.com\ngmail.com";
     s.io.ask = async (q) => (asked.push(q), "yes");
-    assert.equal(await run(s.io, ["customers", "add", "customers.txt"]), 0);
+    assert.equal(
+      await run(s.io, [
+        "relationships",
+        "add",
+        "--group",
+        "Investors",
+        "list.txt",
+      ]),
+      0,
+    );
     assert.deepEqual(
       s.sent.map((x) => JSON.parse(x.body)),
       [
-        { lines: "Acme: acme.com\ngmail.com", check: true },
-        { lines: "Acme: acme.com\ngmail.com" },
+        { lines: "Acme: acme.com\ngmail.com", check: true, group: "Investors" },
+        { lines: "Acme: acme.com\ngmail.com", group: "Investors" },
       ],
     );
-    assert.deepEqual(asked, ["Add one customer? [y/N] "]);
+    assert.deepEqual(asked, ["Add one relationship to Investors? [y/N] "]);
     assert.deepEqual(s.out, [
       "line 1  Acme: acme.com  to add",
       "line 2  gmail.com       refused: a mail provider's domain or your own",
-      "Added one customer. Brood proposes a home for their mail now, among your proposals.",
+      "Added one relationship. Brood proposes a home for their mail now, among your proposals.",
     ]);
   });
 
   it("says the proposals come shortly when Brood has yet to run over them", async () => {
     const s = await signedIn({
-      [api("add_customers")]: [
+      [api("add_relationships")]: [
         () =>
-          customersAnswer(
+          relationshipsAnswer(
             false,
             [
               ["a.com", "added"],
@@ -1270,46 +1279,75 @@ describe("customers add (#659)", () => {
       ],
     });
     s.io.input = async () => "a.com\nb.com";
-    assert.equal(await run(s.io, ["customers", "add", "--yes"]), 0);
+    assert.equal(
+      await run(s.io, [
+        "relationships",
+        "add",
+        "--group",
+        "Investors",
+        "--yes",
+      ]),
+      0,
+    );
     assert.equal(
       s.out.at(-1),
-      "Added 2 customers. Brood proposes a home for their mail shortly.",
+      "Added 2 relationships. Brood proposes a home for their mail shortly.",
     );
   });
 
   it("says a line again when Brood failed on it after the yes", async () => {
     const s = await signedIn({
-      [api("add_customers")]: [
-        () => customersAnswer(true, [["a.com", "added"]]),
-        () => customersAnswer(false, [["a.com", "failed"]]),
+      [api("add_relationships")]: [
+        () => relationshipsAnswer(true, [["a.com", "added"]]),
+        () => relationshipsAnswer(false, [["a.com", "failed"]]),
       ],
     });
     s.io.read = async () => "a.com";
     s.io.ask = async () => "y";
-    assert.equal(await run(s.io, ["customers", "add", "c.txt"]), 0);
+    assert.equal(
+      await run(s.io, [
+        "relationships",
+        "add",
+        "--group",
+        "Investors",
+        "c.txt",
+      ]),
+      0,
+    );
     assert.deepEqual(s.out.slice(-2), [
       "line 1  a.com  not added: Brood failed on it, so try it again",
-      "No new customers were added.",
+      "No new relationships were added.",
     ]);
   });
 
   it("asks nothing when no line is new", async () => {
     const s = await signedIn({
-      [api("add_customers")]: [
-        () => customersAnswer(true, [["acme.com", "already"]]),
+      [api("add_relationships")]: [
+        () => relationshipsAnswer(true, [["acme.com", "already"]]),
       ],
     });
     s.io.read = async () => "acme.com";
     s.io.ask = async () => assert.fail("asked with nothing to add");
-    assert.equal(await run(s.io, ["customers", "add", "c.txt"]), 0);
-    assert.equal(s.out.at(-1), "No new customers to add.");
+    assert.equal(
+      await run(s.io, [
+        "relationships",
+        "add",
+        "--group",
+        "Investors",
+        "c.txt",
+      ]),
+      0,
+    );
+    assert.equal(s.out.at(-1), "No new relationships to add.");
   });
 
-  it("refuses a bare customers, another verb, and a list from standard input without --yes, sending nothing", async () => {
+  it("refuses a bare relationships, another verb, and a list from standard input without --yes, sending nothing", async () => {
     for (const argv of [
-      ["customers"],
-      ["customers", "remove"],
-      ["customers", "add"],
+      ["relationships"],
+      ["relationships", "remove", "--group", "Investors"],
+      ["relationships", "add", "--group", "Investors"],
+      ["relationships", "add", "--yes"],
+      ["keep", "add", "--group", "Investors", "--yes"],
     ]) {
       const s = await signedIn({});
       s.io.input = async () => "acme.com";

@@ -3,7 +3,7 @@ import type {
   ADDRESSED,
   ClassificationReason,
   ClassificationState,
-  CustomerOutcome,
+  RelationshipOutcome,
   DIRECTIONS,
   KeepOutcome,
   KeptKind,
@@ -71,7 +71,11 @@ export type Arguments = {
     );
   unhush: OwnerArgument & { classification: string };
   keep: OwnerArgument & { lines: string; check?: boolean };
-  add_customers: OwnerArgument & { lines: string; check?: boolean };
+  add_relationships: OwnerArgument & {
+    lines: string;
+    group: string;
+    check?: boolean;
+  };
 };
 
 /** A stretch of whole UTC days, each as YYYY-MM-DD, both counted. */
@@ -113,8 +117,8 @@ export type Envelope<T> = {
  * `sender_written` in every answer, and nothing else does (DD21 §8, DD8 §3):
  * an address, a domain, a root, a display name, and a classification's path,
  * which is built from a domain. A client, and an agent above all, treats
- * everything there as untrusted input. A customer's name sits there too: a
- * customer added without one is named after its root domain.
+ * everything there as untrusted input. A relationship's name sits there too: a
+ * relationship added without one is named after its root domain.
  */
 
 /** What the index holds and never holds, for a client orienting itself (DD8 §2). */
@@ -168,7 +172,7 @@ export type SummariseWeek = {
     sender_written: {
       root: string;
       roots: readonly string[];
-      customer: string | null;
+      relationship: string | null;
     };
   }[];
   first_wrote: { sender_written: { root: string } }[];
@@ -211,7 +215,7 @@ export type GetSender = {
     domain: string;
     root: string;
     roots: string[];
-    customer: string | null;
+    relationship: string | null;
     never_quiet_roots: string[];
     never_quiet_addresses: string[];
   };
@@ -366,13 +370,13 @@ export type Keep = {
   lines: { line: number; text: string; outcome: KeepOutcome }[];
 };
 
-/** What adding a list of customers did, or would do. */
-export type AddCustomers = {
+/** What adding a list of relationships did, or would do. */
+export type AddRelationships = {
   /** Whether nothing was written: what adding them would do. */
   checked: boolean;
   /** Whether the engine has yet to run over what was added, so its proposals come shortly; null for a check. */
   later: boolean | null;
-  lines: { line: number; text: string; outcome: CustomerOutcome }[];
+  lines: { line: number; text: string; outcome: RelationshipOutcome }[];
 };
 
 export type Answers = {
@@ -392,7 +396,7 @@ export type Answers = {
   hush: Hush;
   unhush: Unhush;
   keep: Keep;
-  add_customers: AddCustomers;
+  add_relationships: AddRelationships;
 };
 
 /** The codes a problem carries, which clients branch on (DD21 §8, RFC 9457). */

@@ -3,7 +3,7 @@ import {
   TONE_TITLES,
   type Answers,
   type Classification,
-  type CustomerOutcome,
+  type RelationshipOutcome,
   type Envelope,
   type KeepOutcome,
   type Rule,
@@ -29,6 +29,7 @@ export type Options = {
   week?: string;
   sender?: string;
   classification?: string;
+  group?: string;
   check?: boolean;
   yes?: boolean;
 };
@@ -280,7 +281,7 @@ const week: Run = async (io, style, options, args) => {
     section(
       "Wrote most",
       w.loudest.map((s) => [
-        s.sender_written.customer ?? s.sender_written.root,
+        s.sender_written.relationship ?? s.sender_written.root,
         dim(style, s.tags.join(", ")),
       ]),
       "No one wrote.",
@@ -346,7 +347,7 @@ const senders: Run = async (io, style, options, args) => {
 
 function printSender(io: Io, style: Style, s: Answers["get_sender"]): void {
   const w = s.sender_written;
-  io.out(s.scope === "address" ? w.address : (w.customer ?? w.root));
+  io.out(s.scope === "address" ? w.address : (w.relationship ?? w.root));
   io.out(
     `${s.messages} messages in the last ${PORTRAIT_DAYS} days${s.mailing ? ", mostly mailings" : ""}.`,
   );
@@ -581,7 +582,7 @@ const hush: Run = async (io, style, options, args) => {
       error.code === "invalid_argument"
     )
       throw new Refusal(
-        `Brood does not file ${clean(name)} by hand: it is a customer's, someone you write to or a colleague, one of your own filters already acts on it, or its address is one a filter cannot hold exactly.`,
+        `Brood does not file ${clean(name)} by hand: it is a relationship's, someone you write to or a colleague, one of your own filters already acts on it, or its address is one a filter cannot hold exactly.`,
       );
     throw error;
   }
@@ -625,7 +626,7 @@ const unhush: Run = async (io, style, options, args) => {
 };
 
 /** The operations that add a list one a line, checked first: what `paste` runs. */
-type Paste = "keep" | "add_customers";
+type Paste = "keep" | "add_relationships";
 type PasteBody = { owner?: string; lines: string; check?: boolean };
 
 /** How one list's paste is said: its command, its words, and its sentences. */
@@ -646,7 +647,7 @@ type PasteSpec<K extends Paste> = {
 const many = (n: number) => (n === 1 ? "one" : String(n));
 
 /**
- * `brood keep add` and `brood customers add`: the app's paste, checked first
+ * `brood keep add` and `brood relationships add`: the app's paste, checked first
  * and added on a yes. A list read from standard input leaves nobody to ask
  * there, so it is added only with `--yes`; `--check` stops at the check.
  */
@@ -738,10 +739,10 @@ const KEPT: Record<KeepOutcome, string> = {
   unrenderable: "refused: a filter cannot hold it exactly",
 };
 
-/** What became of a line given to `add_customers`, in words. */
-const NAMED: Record<CustomerOutcome, string> = {
+/** What became of a line given to `add_relationships`, in words. */
+const NAMED: Record<RelationshipOutcome, string> = {
   added: "added",
-  already: "a customer already",
+  already: "a relationship already",
   shared: "refused: a mail provider's domain or your own",
   invalid: "refused: no domain Brood can read",
   address: "refused: a site's address, so write its domain",
@@ -769,31 +770,37 @@ const KEEP: PasteSpec<"keep"> = {
   },
 };
 
-const CUSTOMERS: PasteSpec<"add_customers"> = {
-  command: "brood customers add",
-  holds: "customers",
-  send: (io, body) => call(io, "add_customers", body),
+/** The relationships' paste, into the one group the command line named. */
+const placedIn = (group: string): PasteSpec<"add_relationships"> => ({
+  command: "brood relationships add",
+  holds: "relationships",
+  send: (io, body) => call(io, "add_relationships", { ...body, group }),
   told: (c, style) => told(c, NAMED, style),
-  question: (n) => `Add ${n === 1 ? "one customer" : `${n} customers`}?`,
-  nothingNew: "No new customers to add.",
+  question: (n) =>
+    `Add ${n === 1 ? "one relationship" : `${n} relationships`} to ${clean(group)}?`,
+  nothingNew: "No new relationships to add.",
   again: (c) => c.lines.some((l) => l.outcome === "failed"),
   said(io, c) {
     const n = added(c);
-    if (n === 0) return io.out("No new customers were added.");
+    if (n === 0) return io.out("No new relationships were added.");
     io.out(
-      `Added ${n === 1 ? "one customer" : `${n} customers`}. Brood proposes a home for their mail ${c.later ? "shortly" : "now, among your proposals"}.`,
+      `Added ${n === 1 ? "one relationship" : `${n} relationships`}. Brood proposes a home for their mail ${c.later ? "shortly" : "now, among your proposals"}.`,
     );
   },
-};
+});
 
-/** `brood customers add`, a list of customers. */
-const customers: Run = async (io, style, options, args) => {
+/** `brood relationships add`, a list of them into one group. */
+const relationships: Run = async (io, style, options, args) => {
   const [verb, ...rest] = args;
   if (verb !== "add")
     throw new Refusal(
-      `brood customers takes add${verb === undefined ? "" : `, not ${clean(verb)}`}.`,
+      `brood relationships takes add${verb === undefined ? "" : `, not ${clean(verb)}`}.`,
     );
-  return paste(io, style, options, rest, CUSTOMERS);
+  if (options.group === undefined)
+    throw new Refusal(
+      "brood relationships add needs --group <name>: the group they join, made if it is new.",
+    );
+  return paste(io, style, options, rest, placedIn(options.group));
 };
 
 /** `brood keep`, the never-quiet list; `brood keep add`, a list added to it. */
@@ -846,5 +853,5 @@ export const COMMANDS: Record<string, { run: Run; takes: OptionName[] }> = {
   hush: { run: hush, takes: [] },
   unhush: { run: unhush, takes: [] },
   keep: { run: keep, takes: ["check", "yes", "limit", "cursor"] },
-  customers: { run: customers, takes: ["check", "yes"] },
+  relationships: { run: relationships, takes: ["group", "check", "yes"] },
 };

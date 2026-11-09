@@ -12,7 +12,7 @@ import { depthOf, wrenIn } from "./wren.ts";
  * `brood`, the command line over Brood's index (DD10): it answers questions
  * about a mailbox without opening one, and changes it only by `hush`,
  * `unhush` and `keep add`, which changes Brood's filters to keep mail in
- * view. `customers add` changes what Brood proposes, never the mailbox. Bare `brood` prints this help, never a report (DD10 §3), so it is
+ * view. `relationships add` changes what Brood proposes, never the mailbox. Bare `brood` prints this help, never a report (DD10 §3), so it is
  * never a status glanced at, under the wren.
  */
 
@@ -38,8 +38,9 @@ Keeping in view, which changes Brood's filters so it never files these senders
   brood keep                        your never-quiet list
   brood keep add [<file>]           add addresses and domains, one a line, from a file or standard input
 
-Customers, whose mail Brood gives a home of its own
-  brood customers add [<file>]      add customers, one a line, as Name: domain, domain
+Relationships, whose mail Brood gives a home of its own
+  brood relationships add --group <name> [<file>]
+                                    add them to a group, one a line, as Name: domain, domain
 
 Accounts and session
   brood accounts                    your mailboxes, and whether Brood can read them
@@ -55,8 +56,9 @@ Options
   --state <state>        classifications in one state
   --week <monday>        brood week for an earlier week
   --classification <id>  brood rules for one classification
-  --check                keep add, customers add: say what each line would become, and add nothing
-  --yes                  keep add, customers add: add the list without asking
+  --group <name>         relationships add: the group they join, made if it is new
+  --check                keep add, relationships add: say what each line would become, and add nothing
+  --yes                  keep add, relationships add: add the list without asking
   --owner <user id>      the index of someone who granted you access
   --no-color             no dimming, as NO_COLOR also asks`;
 
@@ -95,6 +97,7 @@ const OPTION_NAMES: OptionName[] = [
   "week",
   "sender",
   "classification",
+  "group",
   "check",
   "yes",
 ];
@@ -118,6 +121,7 @@ export async function run(io: Io, argv: string[]): Promise<number> {
         week: { type: "string" },
         sender: { type: "string" },
         classification: { type: "string" },
+        group: { type: "string" },
         check: { type: "boolean" },
         yes: { type: "boolean" },
         owner: { type: "string" },
@@ -195,6 +199,7 @@ export async function run(io: Io, argv: string[]): Promise<number> {
       ...(values.classification === undefined
         ? {}
         : { classification: values.classification }),
+      ...(values.group === undefined ? {} : { group: values.group }),
       ...(values.check ? { check: true } : {}),
       ...(values.yes ? { yes: true } : {}),
     };
