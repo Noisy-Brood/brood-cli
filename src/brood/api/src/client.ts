@@ -4,6 +4,8 @@ import type {
   ClassificationReason,
   ClassificationState,
   RelationshipOutcome,
+  ReproposeOutcome,
+  UnsubscribeOutcome,
   DIRECTIONS,
   KeepOutcome,
   KeptKind,
@@ -70,6 +72,16 @@ export type Arguments = {
       | { sender: string; classification?: never }
     );
   unhush: OwnerArgument & { classification: string };
+  list_proposals: OwnerArgument;
+  file_proposals: OwnerArgument & {
+    classifications: string[];
+    plain?: boolean;
+  };
+  decline_proposal: OwnerArgument & { classification: string };
+  propose_again: OwnerArgument & { classification: string };
+  list_unsubscribable: OwnerArgument;
+  unsubscribe: OwnerArgument & { sender: string };
+  choose_unsubscribes: OwnerArgument & { senders: string[] };
   keep: OwnerArgument & { lines: string; check?: boolean };
   add_relationships: OwnerArgument & {
     lines: string;
@@ -347,6 +359,46 @@ export type Unhush = {
   home_left: number;
 };
 
+/** What Brood proposes to file, each saying whether it clears the bar. */
+export type ListProposals = {
+  proposals: (Classification & { plain: boolean })[];
+};
+
+/** How filing several proposals went, in counts. */
+export type FileProposals = {
+  /** Filed in every mailbox it reached. */
+  filed: number;
+  /** Filed, but its filter is missing from some mailbox. */
+  partly: number;
+  /** Refused, or no longer a proposal. */
+  refused: number;
+  /** Not reached in the time one request has: still proposals. */
+  left: number;
+};
+
+export type DeclineProposal = {
+  id: string;
+  outcome: "declined" | "not_proposed";
+};
+
+export type ProposeAgain = { id: string; outcome: ReproposeOutcome };
+
+/** The senders Brood can ask to stop now. */
+export type ListUnsubscribable = {
+  senders: {
+    id: string;
+    /** Messages it sent lately. */
+    recent: number;
+    sender_written: { address: string };
+  }[];
+  /** Whether there are more than one request takes. */
+  more: boolean;
+};
+
+export type Unsubscribe = { id: string; outcome: UnsubscribeOutcome };
+
+export type ChooseUnsubscribes = { chosen: number };
+
 /** The never-quiet list: the person's own entries, and those Brood keeps for everyone. */
 export type ListKept = {
   kept: {
@@ -395,6 +447,13 @@ export type Answers = {
   end_session: EndSession;
   hush: Hush;
   unhush: Unhush;
+  list_proposals: ListProposals;
+  file_proposals: FileProposals;
+  decline_proposal: DeclineProposal;
+  propose_again: ProposeAgain;
+  list_unsubscribable: ListUnsubscribable;
+  unsubscribe: Unsubscribe;
+  choose_unsubscribes: ChooseUnsubscribes;
   keep: Keep;
   add_relationships: AddRelationships;
 };

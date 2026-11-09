@@ -106,6 +106,32 @@ export const RELATIONSHIP_OUTCOMES = [
 ] as const;
 export type RelationshipOutcome = (typeof RELATIONSHIP_OUTCOMES)[number];
 
+/** What came of asking for a declined classification to be proposed again. */
+export const REPROPOSE_OUTCOMES = [
+  "reproposed",
+  "already_proposed",
+  "retiring",
+  "returning",
+  "not_declined",
+] as const;
+export type ReproposeOutcome = (typeof REPROPOSE_OUTCOMES)[number];
+
+/**
+ * What came of asking a sender to stop, as the app's words for it, which a
+ * test keeps equal.
+ */
+export const UNSUBSCRIBE_OUTCOMES = [
+  "asked",
+  "declined",
+  "unreachable",
+  "blocked",
+  "not_offered",
+  "never_quiet",
+  "relationship",
+  "limited",
+] as const;
+export type UnsubscribeOutcome = (typeof UNSUBSCRIBE_OUTCOMES)[number];
+
 /** A list of values as the reference writes them: each as code, `or` before the last. */
 export const listed = (values: readonly string[]) =>
   values.length < 2

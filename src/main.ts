@@ -11,7 +11,7 @@ import { depthOf, wrenIn } from "./wren.ts";
 /**
  * `brood`, the command line over Brood's index (DD10): it answers questions
  * about a mailbox without opening one, and changes it only by `hush`,
- * `unhush` and `keep add`, which changes Brood's filters to keep mail in
+ * `unhush`, `proposals file`, `unsubscribe` and `keep add`, which changes Brood's filters to keep mail in
  * view. `relationships add` changes what Brood proposes, never the mailbox. Bare `brood` prints this help, never a report (DD10 §3), so it is
  * never a status glanced at, under the wren.
  */
@@ -33,6 +33,17 @@ Structure
 Suppression, which changes your mailbox
   brood hush <domain|address|id>    file a sender, proposed or not
   brood unhush <domain|address|id>  undo the filing
+
+Proposals, what Brood would file
+  brood proposals                   what it proposes; those marked ready can be filed together
+  brood proposals file <id>...      file these, or --all for those marked ready
+  brood proposals decline <id>      not this one, and never proposed again
+  brood proposals again <id>        put a declined one back among the proposals
+
+Unsubscribing, which cannot be taken back
+  brood unsubscribe                 who Brood can ask to stop
+  brood unsubscribe <address>       ask one now
+  brood unsubscribe <address>...    ask several in turn, or --all for everyone listed
 
 Keeping in view, which changes Brood's filters so it never files these senders
   brood keep                        your never-quiet list
@@ -56,9 +67,10 @@ Options
   --state <state>        classifications in one state
   --week <monday>        brood week for an earlier week
   --classification <id>  brood rules for one classification
+  --all                  proposals file: those marked ready; unsubscribe: everyone listed
   --group <name>         relationships add: the group they join, made if it is new
-  --check                keep add, relationships add: say what each line would become, and add nothing
-  --yes                  keep add, relationships add: add the list without asking
+  --check                keep add, relationships add, proposals file, unsubscribe: say what it would do, and do nothing
+  --yes                  keep add, relationships add, proposals file, unsubscribe: do it without asking
   --owner <user id>      the index of someone who granted you access
   --no-color             no dimming, as NO_COLOR also asks`;
 
@@ -98,6 +110,7 @@ const OPTION_NAMES: OptionName[] = [
   "sender",
   "classification",
   "group",
+  "all",
   "check",
   "yes",
 ];
@@ -122,6 +135,7 @@ export async function run(io: Io, argv: string[]): Promise<number> {
         sender: { type: "string" },
         classification: { type: "string" },
         group: { type: "string" },
+        all: { type: "boolean" },
         check: { type: "boolean" },
         yes: { type: "boolean" },
         owner: { type: "string" },
@@ -200,6 +214,7 @@ export async function run(io: Io, argv: string[]): Promise<number> {
         ? {}
         : { classification: values.classification }),
       ...(values.group === undefined ? {} : { group: values.group }),
+      ...(values.all ? { all: true } : {}),
       ...(values.check ? { check: true } : {}),
       ...(values.yes ? { yes: true } : {}),
     };

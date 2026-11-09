@@ -4,11 +4,18 @@ import {
   type Answers,
   type Classification,
   type RelationshipOutcome,
+  type ReproposeOutcome,
+  type UnsubscribeOutcome,
   type Envelope,
   type KeepOutcome,
   type Rule,
 } from "./brood/api/src/client.ts";
-import { API_PAGE_MAX, API_STRETCH_DAYS, PORTRAIT_DAYS } from "./brood/figures/index.ts";
+import {
+  API_PAGE_MAX,
+  API_STRETCH_DAYS,
+  PORTRAIT_DAYS,
+  PROPOSALS_AT_ONCE,
+} from "./brood/figures/index.ts";
 import { call } from "./client.ts";
 import { clean, Refusal, Refused, type Io } from "./io.ts";
 import { day, dim, json, more, rows, state, type Style } from "./out.ts";
@@ -30,6 +37,7 @@ export type Options = {
   sender?: string;
   classification?: string;
   group?: string;
+  all?: boolean;
   check?: boolean;
   yes?: boolean;
 };
@@ -660,8 +668,7 @@ async function paste<K extends Paste>(
 ): Promise<void> {
   if (args.length > 1)
     throw new Refusal("Name one file, or none for standard input.");
-  if (options.check && options.yes)
-    throw new Refusal("--check and --yes ask for opposite things: give one.");
+  noCheckAndYes(options);
   without(options, ["limit", "cursor"], spec.command);
   const [file] = args;
   let given: string;
@@ -705,7 +712,7 @@ async function paste<K extends Paste>(
   ).length;
   if (fresh === 0) return io.out(spec.nothingNew);
   const yes = await asking(`${spec.question(fresh)} [y/N] `);
-  if (!/^y(es)?$/i.test(yes.trim())) return io.out("Nothing added.");
+  if (!isYes(yes)) return io.out("Nothing added.");
   shown(io, style, await spec.send(io, body), (a) => {
     if (spec.again(a)) lines(a);
     spec.said(io, a);
@@ -789,6 +796,283 @@ const placedIn = (group: string): PasteSpec<"add_relationships"> => ({
   },
 });
 
+const isYes = (answer: string) => /^y(es)?$/i.test(answer.trim());
+
+/**
+ * Whether the person agreed to what was just shown: `--yes`, or a yes at a
+ * terminal. With nobody to ask, it is refused rather than assumed.
+ */
+async function agreed(
+  io: Io,
+  style: Style,
+  options: Options,
+  question: string,
+): Promise<boolean> {
+  if (options.yes) return true;
+  if (style.json || io.ask === null)
+    throw new Refusal(
+      style.json
+        ? "With --json, give --check to see what would happen, or --yes to do it."
+        : "Nobody is at a terminal to ask: give --yes to do it, or --check to see what would happen.",
+    );
+  const yes = await io.ask(`${question} [y/N] `);
+  if (isYes(yes)) return true;
+  io.out("Nothing changed.");
+  return false;
+}
+
+/**
+ * What is about to happen, shown first. With --json only the answer is
+ * printed, so a preview is the whole output of --check and nothing otherwise.
+ */
+function previewed<T>(
+  io: Io,
+  style: Style,
+  options: Options,
+  answer: Envelope<T>,
+  print: () => void,
+): void {
+  if (!style.json) return print();
+  if (options.check) json(io, answer);
+}
+
+const noCheckAndYes = (options: Options) => {
+  if (options.check && options.yes)
+    throw new Refusal("--check and --yes ask for opposite things: give one.");
+};
+
+const anId = (args: string[], what: string, listedBy: string): string => {
+  const id = one(args, what);
+  if (!UUID.test(id))
+    throw new Refusal(`${clean(id)} is not an id: ${listedBy} lists them.`);
+  return id;
+};
+
+/** `brood proposals file`: the ones named, or with `--all` those Brood marks. */
+async function fileProposals(
+  io: Io,
+  style: Style,
+  options: Options,
+  args: string[],
+): Promise<void> {
+  noCheckAndYes(options);
+  if (options.all && args.length)
+    throw new Refusal("Name proposals or give --all, not both.");
+  if (!options.all && args.length === 0)
+    throw new Refusal(
+      "Name the proposals to file, by id, or give --all for those marked ready.",
+    );
+  const listed = await call(io, "list_proposals", { ...owner(options) });
+  const { proposals } = listed.data;
+  const named = args.map((id) => {
+    const found = proposals.find((p) => p.id === id);
+    if (!found) throw new Refusal(`${clean(id)} is not among the proposals.`);
+    return found;
+  });
+  const ready = proposals.filter((p) => p.plain);
+  const picked = options.all ? ready.slice(0, PROPOSALS_AT_ONCE) : named;
+  if (picked.length === 0)
+    return shown(io, style, listed, () => io.out("Nothing to file."));
+  previewed(io, style, options, listed, () => {
+    rows(
+      io,
+      picked.map((p) => [p.sender_written.subject, p.sender_written.path]),
+    );
+    if (options.all && ready.length > picked.length)
+      io.out(
+        `${ready.length - picked.length} more stay proposals, for another --all.`,
+      );
+  });
+  if (options.check) return;
+  const n = picked.length;
+  if (
+    !(await agreed(
+      io,
+      style,
+      options,
+      `File ${n === 1 ? "this one" : `these ${n}`} out of your inbox?`,
+    ))
+  )
+    return;
+  shown(
+    io,
+    style,
+    await call(io, "file_proposals", {
+      ...owner(options),
+      classifications: picked.map((p) => p.id),
+      ...(options.all ? { plain: true } : {}),
+    }),
+    (f) => {
+      io.out(`Filed ${f.filed}.`);
+      if (f.partly)
+        io.out(`${f.partly} filed, with a filter missing from some mailbox.`);
+      if (f.refused) io.out(`${f.refused} refused, and not filed.`);
+      if (f.left) io.out(`${f.left} not reached in time, and still proposals.`);
+    },
+  );
+}
+
+const REPROPOSED: Record<ReproposeOutcome, string> = {
+  reproposed: "It is back among the proposals.",
+  already_proposed: "It is among the proposals already.",
+  retiring: "Not yet: Brood has yet to remove its filters.",
+  returning: "Not yet: its mail is still coming back.",
+  not_declined: "It is not declined, so there is nothing to propose again.",
+};
+
+/** `brood proposals`, and filing, declining or proposing one again. */
+const proposals: Run = async (io, style, options, args) => {
+  const [verb, ...rest] = args;
+  if (verb === "file") return fileProposals(io, style, options, rest);
+  without(
+    options,
+    ["all", "check", "yes"],
+    `brood proposals ${verb ?? ""}`.trim(),
+  );
+  if (verb === undefined) {
+    const answer = await call(io, "list_proposals", { ...owner(options) });
+    return shown(io, style, answer, (a) => {
+      if (a.proposals.length === 0) return io.out("Nothing proposed.");
+      rows(
+        io,
+        a.proposals.map((p) => [
+          p.sender_written.subject,
+          p.sender_written.path,
+          p.plain ? "ready" : "",
+          p.reason ?? "",
+          dim(style, p.id),
+        ]),
+      );
+    });
+  }
+  if (verb === "decline") {
+    const classification = anId(rest, "proposal, by its id", "brood proposals");
+    return shown(
+      io,
+      style,
+      await call(io, "decline_proposal", {
+        ...owner(options),
+        classification,
+      }),
+      (d) =>
+        io.out(
+          d.outcome === "declined"
+            ? "Declined. Brood will not propose it again."
+            : "It is no longer a proposal.",
+        ),
+    );
+  }
+  if (verb === "again") {
+    const classification = anId(
+      rest,
+      "classification, by its id",
+      "brood classifications --state declined",
+    );
+    return shown(
+      io,
+      style,
+      await call(io, "propose_again", { ...owner(options), classification }),
+      (a) => io.out(REPROPOSED[a.outcome]),
+    );
+  }
+  throw new Refusal(
+    `brood proposals takes file, decline or again, not ${clean(verb)}.`,
+  );
+};
+
+const ASKED: Record<UnsubscribeOutcome, string> = {
+  asked: "Asked. The sender accepted.",
+  declined: "Asked, and the sender did not accept.",
+  unreachable: "The sender's address gave no answer.",
+  blocked: "Not sent: Brood does not contact that address.",
+  not_offered:
+    "Not sent: its mailing no longer offers a one-click unsubscribe.",
+  never_quiet: "Not sent: it is on your never-quiet list.",
+  relationship: "Not sent: it is one of your relationships.",
+  limited: "Not sent: today's allowance is spent. Try again tomorrow.",
+};
+
+/** `brood unsubscribe`: who can be asked, one asked now, or several in turn. */
+const unsubscribeCommand: Run = async (io, style, options, args) => {
+  noCheckAndYes(options);
+  if (options.all && args.length)
+    throw new Refusal("Name senders or give --all, not both.");
+  const listed = await call(io, "list_unsubscribable", { ...owner(options) });
+  const { senders } = listed.data;
+  if (args.length === 0 && !options.all) {
+    without(options, ["check", "yes"], "brood unsubscribe with no sender");
+    return shown(io, style, listed, (a) => {
+      if (a.senders.length === 0)
+        return io.out("Nobody Brood can ask just now.");
+      rows(
+        io,
+        a.senders.map((s) => [s.sender_written.address, String(s.recent)]),
+      );
+      if (a.more) io.out("These are the busiest, and there are more.");
+    });
+  }
+  const named = args.map((name) => {
+    const found = senders.find(
+      (s) => s.id === name || same(s.sender_written.address, name),
+    );
+    if (!found)
+      throw new Refusal(
+        `Brood cannot ask ${clean(name)} just now: brood unsubscribe lists who it can.`,
+      );
+    return found;
+  });
+  const picked = options.all ? senders : named;
+  if (picked.length === 0)
+    return shown(io, style, listed, () =>
+      io.out("Nobody Brood can ask just now."),
+    );
+  previewed(io, style, options, listed, () => {
+    rows(
+      io,
+      picked.map((s) => [s.sender_written.address, String(s.recent)]),
+    );
+    if (options.all && listed.data.more)
+      io.out("These are the busiest, and only these are asked.");
+  });
+  if (options.check) return;
+  const [only] = picked;
+  if (only && picked.length === 1 && !options.all) {
+    if (
+      !(await agreed(
+        io,
+        style,
+        options,
+        `Ask ${clean(only.sender_written.address)} to stop? This cannot be taken back.`,
+      ))
+    )
+      return;
+    return shown(
+      io,
+      style,
+      await call(io, "unsubscribe", { ...owner(options), sender: only.id }),
+      (u) => io.out(ASKED[u.outcome]),
+    );
+  }
+  if (
+    !(await agreed(
+      io,
+      style,
+      options,
+      `Ask these ${picked.length} to stop, in turn over the coming days? This cannot be taken back.`,
+    ))
+  )
+    return;
+  shown(
+    io,
+    style,
+    await call(io, "choose_unsubscribes", {
+      ...owner(options),
+      senders: picked.map((s) => s.id),
+    }),
+    (c) => io.out(`Chose ${c.chosen}. Brood asks them in turn.`),
+  );
+};
+
 /** `brood relationships add`, a list of them into one group. */
 const relationships: Run = async (io, style, options, args) => {
   const [verb, ...rest] = args;
@@ -854,4 +1138,6 @@ export const COMMANDS: Record<string, { run: Run; takes: OptionName[] }> = {
   unhush: { run: unhush, takes: [] },
   keep: { run: keep, takes: ["check", "yes", "limit", "cursor"] },
   relationships: { run: relationships, takes: ["group", "check", "yes"] },
+  proposals: { run: proposals, takes: ["all", "check", "yes"] },
+  unsubscribe: { run: unsubscribeCommand, takes: ["all", "check", "yes"] },
 };

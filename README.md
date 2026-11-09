@@ -14,10 +14,11 @@ writes to you, how often, who has gone quiet, and what Brood has decided about
 each. It never reads a message. The index holds no subject, no body and no
 attachment, so there is nothing of what anyone wrote for it to show you.
 
-It changes your mailbox in three ways only: `brood hush` and `brood unhush`,
-which file a sender's mail and bring it back, and `brood keep add`, which adds
-addresses and domains to the list of senders Brood never files. Each needs you
-to have signed in with that permission.
+It changes your mailbox only when you tell it to: `brood hush`, `brood unhush`
+and `brood proposals file` file a sender's mail or bring it back, `brood
+unsubscribe` asks a sender to stop writing, and `brood keep add` adds addresses
+and domains to the list of senders Brood never files. Each needs you to have
+signed in with that permission.
 
 ## Install
 

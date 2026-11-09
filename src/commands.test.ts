@@ -1357,6 +1357,205 @@ describe("relationships add (#659)", () => {
   });
 });
 
+const proposal = (n: number, subject: string, plain: boolean) => ({
+  id: ID(n),
+  state: "proposed",
+  reason: "volume",
+  subject_kind: "domain",
+  proposed_at: "2026-10-16T00:00:00Z",
+  decided_at: null,
+  decided_by: null,
+  sender_written: { path: `external/${subject}`, subject },
+  plain,
+});
+const proposalsAnswer = () =>
+  envelope({
+    proposals: [proposal(1, "list.com", true), proposal(2, "other.com", false)],
+  });
+const filedAnswer = (filed: number) =>
+  envelope({ filed, partly: 0, refused: 0, left: 0 });
+
+describe("proposals (#1729)", () => {
+  it("lists them, marking those ready", async () => {
+    const s = await signedIn({ [api("list_proposals")]: [proposalsAnswer] });
+    assert.equal(await run(s.io, ["proposals"]), 0);
+    assert.ok(s.out[0]!.includes("list.com"));
+    assert.ok(s.out[0]!.includes("ready"));
+    assert.ok(!s.out[1]!.includes(" ready"));
+  });
+
+  it("files those marked ready with --all, asking first, and asks the bar again", async () => {
+    const s = await signedIn({
+      [api("list_proposals")]: [proposalsAnswer],
+      [api("file_proposals")]: [() => filedAnswer(1)],
+    });
+    const asked: string[] = [];
+    s.io.ask = async (q) => (asked.push(q), "y");
+    assert.equal(await run(s.io, ["proposals", "file", "--all"]), 0);
+    assert.deepEqual(asked, ["File this one out of your inbox? [y/N] "]);
+    const sent = s.sent.map((x) => JSON.parse(x.body));
+    assert.deepEqual(sent.at(-1), { classifications: [ID(1)], plain: true });
+    assert.equal(s.out.at(-1), "Filed 1.");
+  });
+
+  it("files one named even though it is not marked, as the person's own choice", async () => {
+    const s = await signedIn({
+      [api("list_proposals")]: [proposalsAnswer],
+      [api("file_proposals")]: [() => filedAnswer(1)],
+    });
+    assert.equal(await run(s.io, ["proposals", "file", ID(2), "--yes"]), 0);
+    assert.deepEqual(JSON.parse(s.sent.at(-1)!.body), {
+      classifications: [ID(2)],
+    });
+  });
+
+  it("files nothing on a no, with --check, or with nobody to ask", async () => {
+    for (const [argv, ask] of [
+      [["proposals", "file", "--all"], async () => "n"],
+      [["proposals", "file", "--all", "--check"], async () => "y"],
+      [["proposals", "file", "--all"], null],
+    ] as const) {
+      const s = await signedIn({ [api("list_proposals")]: [proposalsAnswer] });
+      s.io.ask = ask;
+      await run(s.io, [...argv]);
+      assert.ok(
+        !s.sent.some((x) => x.url.endsWith("file_proposals")),
+        argv.join(" "),
+      );
+    }
+  });
+
+  it("refuses --all with names, a name not proposed, and a verb it does not have", async () => {
+    for (const argv of [
+      ["proposals", "file", "--all", ID(1)],
+      ["proposals", "file"],
+      ["proposals", "file", ID(9), "--yes"],
+      ["proposals", "remove"],
+      ["proposals", "decline", "not-an-id"],
+      ["proposals", "decline", ID(1), "--check"],
+      ["proposals", "again", ID(1), "--yes"],
+    ]) {
+      const s = await signedIn({ [api("list_proposals")]: [proposalsAnswer] });
+      assert.equal(await run(s.io, argv), 1, argv.join(" "));
+      assert.ok(
+        !s.sent.some((x) => x.url.endsWith("file_proposals")),
+        argv.join(" "),
+      );
+    }
+  });
+
+  it("prints only the answer with --json, the listing for --check and the result for --yes", async () => {
+    const s = await signedIn({
+      [api("list_proposals")]: [proposalsAnswer, proposalsAnswer],
+      [api("file_proposals")]: [() => filedAnswer(1)],
+    });
+    await run(s.io, ["--json", "proposals", "file", "--all", "--check"]);
+    assert.ok(JSON.parse(s.out.join("\n")).data.proposals);
+    s.out.length = 0;
+    await run(s.io, ["--json", "proposals", "file", "--all", "--yes"]);
+    assert.equal(JSON.parse(s.out.join("\n")).data.filed, 1);
+  });
+
+  it("declines one, and puts one back", async () => {
+    const s = await signedIn({
+      [api("decline_proposal")]: [
+        () => envelope({ id: ID(1), outcome: "declined" }),
+      ],
+      [api("propose_again")]: [
+        () => envelope({ id: ID(1), outcome: "returning" }),
+      ],
+    });
+    assert.equal(await run(s.io, ["proposals", "decline", ID(1)]), 0);
+    assert.equal(s.out.at(-1), "Declined. Brood will not propose it again.");
+    assert.equal(await run(s.io, ["proposals", "again", ID(1)]), 0);
+    assert.equal(s.out.at(-1), "Not yet: its mail is still coming back.");
+  });
+});
+
+const askable = () =>
+  envelope({
+    senders: [
+      { id: ID(1), recent: 4, sender_written: { address: "news@a.com" } },
+      { id: ID(2), recent: 2, sender_written: { address: "news@b.com" } },
+    ],
+    more: false,
+  });
+
+describe("unsubscribe (#1729)", () => {
+  it("lists who can be asked, asking nobody", async () => {
+    const s = await signedIn({ [api("list_unsubscribable")]: [askable] });
+    assert.equal(await run(s.io, ["unsubscribe"]), 0);
+    assert.equal(s.sent.length >= 1, true);
+    assert.ok(s.out[0]!.includes("news@a.com"));
+    assert.ok(!s.sent.some((x) => x.url.endsWith("/unsubscribe")));
+  });
+
+  it("asks one now, after a yes, by its address", async () => {
+    const s = await signedIn({
+      [api("list_unsubscribable")]: [askable],
+      [api("unsubscribe")]: [() => envelope({ id: ID(2), outcome: "asked" })],
+    });
+    const asked: string[] = [];
+    s.io.ask = async (q) => (asked.push(q), "yes");
+    assert.equal(await run(s.io, ["unsubscribe", "news@b.com"]), 0);
+    assert.deepEqual(asked, [
+      "Ask news@b.com to stop? This cannot be taken back. [y/N] ",
+    ]);
+    assert.deepEqual(JSON.parse(s.sent.at(-1)!.body), { sender: ID(2) });
+    assert.equal(s.out.at(-1), "Asked. The sender accepted.");
+  });
+
+  it("chooses everyone listed with --all, to be asked in turn", async () => {
+    const s = await signedIn({
+      [api("list_unsubscribable")]: [askable],
+      [api("choose_unsubscribes")]: [() => envelope({ chosen: 2 })],
+    });
+    assert.equal(await run(s.io, ["unsubscribe", "--all", "--yes"]), 0);
+    assert.deepEqual(JSON.parse(s.sent.at(-1)!.body), {
+      senders: [ID(1), ID(2)],
+    });
+  });
+
+  it("says when there are more than it lists, and prints only the answer with --json", async () => {
+    const many = () =>
+      envelope({
+        senders: [
+          { id: ID(1), recent: 4, sender_written: { address: "news@a.com" } },
+        ],
+        more: true,
+      });
+    const s = await signedIn({
+      [api("list_unsubscribable")]: [many, many],
+      [api("unsubscribe")]: [() => envelope({ id: ID(1), outcome: "asked" })],
+    });
+    await run(s.io, ["unsubscribe"]);
+    assert.equal(s.out.at(-1), "These are the busiest, and there are more.");
+    s.out.length = 0;
+    await run(s.io, ["--json", "unsubscribe", "news@a.com", "--yes"]);
+    assert.equal(JSON.parse(s.out.join("\n")).data.outcome, "asked");
+  });
+
+  it("sends nothing for someone it cannot ask, on a no, or with --check", async () => {
+    for (const [argv, ask] of [
+      [["unsubscribe", "stranger@c.com", "--yes"], async () => "y"],
+      [["unsubscribe", "news@a.com"], async () => "n"],
+      [["unsubscribe", "news@a.com", "--check"], async () => "y"],
+    ] as const) {
+      const s = await signedIn({ [api("list_unsubscribable")]: [askable] });
+      s.io.ask = ask;
+      await run(s.io, [...argv]);
+      assert.ok(
+        !s.sent.some(
+          (x) =>
+            x.url.endsWith("/unsubscribe") ||
+            x.url.endsWith("choose_unsubscribes"),
+        ),
+        argv.join(" "),
+      );
+    }
+  });
+});
+
 describe("hush by hand, under a root filed address by address (#1355)", () => {
   it("says what was filed when it is an address rather than the root named", async () => {
     const s = await signedIn({
