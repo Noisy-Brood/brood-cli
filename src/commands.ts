@@ -1,5 +1,7 @@
 import {
   RELATIONSHIP_REMOVAL,
+  RULE_BOOK_KEYS,
+  ADOPT_REFUSALS,
   CLASSIFICATION_STATES,
   TONE_TITLES,
   type Answers,
@@ -11,6 +13,9 @@ import {
   type Envelope,
   type KeepOutcome,
   type Rule,
+  type ThresholdName,
+  type AdoptOutcome,
+  type AdoptRefusalWord,
 } from "./brood/api/src/client.ts";
 import {
   API_PAGE_MAX,
@@ -532,6 +537,19 @@ function printRule(io: Io, style: Style, r: Rule): void {
 }
 
 const rules: Run = async (io, style, options, args) => {
+  if (args[0] === "file") {
+    without(options, ["classification", "limit", "cursor"], "brood rules file");
+    const rule = anId(args.slice(1), "rule, by its id", "brood rules");
+    return shown(
+      io,
+      style,
+      await call(io, "file_existing", { ...owner(options), rule }),
+      (f) =>
+        io.out(
+          `${FILED_EXISTING[f.outcome]}${f.filed ? ` ${f.filed === 1 ? "One message" : `${f.filed} messages`} filed so far.` : ""}`,
+        ),
+    );
+  }
   if (args.length) {
     without(options, ["classification", "limit", "cursor"], "brood rules <id>");
     const answer = await call(io, "get_rule", {
@@ -809,13 +827,19 @@ async function agreed(
   style: Style,
   options: Options,
   question: string,
+  /** Whether the command takes --check, so the refusal names it. */
+  checkable = true,
 ): Promise<boolean> {
   if (options.yes) return true;
   if (style.json || io.ask === null)
     throw new Refusal(
-      style.json
-        ? "With --json, give --check to see what would happen, or --yes to do it."
-        : "Nobody is at a terminal to ask: give --yes to do it, or --check to see what would happen.",
+      checkable
+        ? style.json
+          ? "With --json, give --check to see what would happen, or --yes to do it."
+          : "Nobody is at a terminal to ask: give --yes to do it, or --check to see what would happen."
+        : style.json
+          ? "With --json, give --yes to do it."
+          : "Nobody is at a terminal to ask: give --yes to do it.",
     );
   const yes = await io.ask(`${question} [y/N] `);
   if (isYes(yes)) return true;
@@ -1343,6 +1367,463 @@ const keep: Run = async (io, style, options, args) => {
   });
 };
 
+/**
+ * The one classification in `state` a name means: by its id, or what it
+ * covers, or its path. Several are put back to the person, as `chosen` does.
+ */
+async function homeIn(
+  io: Io,
+  style: Style,
+  options: Options,
+  name: string,
+  state: "active" | "quieted",
+  form: string,
+): Promise<string> {
+  const found = (await classificationsOf(io, options, name)).filter(
+    (c) => c.state === state,
+  );
+  const [only, ...others] = found;
+  if (!only)
+    throw new Refusal(
+      state === "quieted"
+        ? `Nothing quieted is ${clean(name)}.`
+        : `Nothing filed is ${clean(name)}.`,
+    );
+  if (!others.length) return only.id;
+  io.err(`Several classifications cover ${clean(name)}:`);
+  rows(
+    io,
+    found.map((c) => [c.sender_written.path, c.state, dim(style, c.id)]),
+    io.err,
+  );
+  throw new Refusal(`Run ${form} with the id of the one you mean.`);
+}
+
+const RESTORED: Record<Answers["restore_quieted"]["outcome"], string> = {
+  restored:
+    "Brought back. Brood files it again, and its home is back in place.",
+  restored_left:
+    "Brought back. Brood files it again; a home you renamed or removed is left as it is.",
+  restored_later:
+    "Brought back. Brood files it again, and moves its home back at the next rules pass.",
+  not_quieted: "It is not quieted, so nothing changed.",
+};
+
+/** `brood quieted`, and bringing one back or leaving it quiet. */
+const quieted: Run = async (io, style, options, args) => {
+  const [verb, ...rest] = args;
+  if (verb === undefined) {
+    const answer = await call(io, "list_classifications", {
+      ...owner(options),
+      ...page(options),
+      state: "quieted",
+    });
+    return shown(io, style, answer, (data) => {
+      if (!data.classifications.length) return io.out("Nothing is quieted.");
+      rows(
+        io,
+        data.classifications.map((c) => [
+          c.sender_written.path,
+          c.decided_at ? `quieted ${day(c.decided_at)}` : "",
+          dim(style, c.id),
+        ]),
+      );
+    });
+  }
+  if (verb !== "restore" && verb !== "leave")
+    throw new Refusal(
+      `brood quieted takes restore or leave, not ${clean(verb)}.`,
+    );
+  without(options, ["limit", "cursor"], `brood quieted ${verb}`);
+  const name = one(rest, "quieted home, by what it covers, its path or its id");
+  const classification = await homeIn(
+    io,
+    style,
+    options,
+    name,
+    "quieted",
+    `brood quieted ${verb}`,
+  );
+  const body = { ...owner(options), classification };
+  if (verb === "restore")
+    return shown(io, style, await call(io, "restore_quieted", body), (r) =>
+      io.out(RESTORED[r.outcome]),
+    );
+  return shown(io, style, await call(io, "leave_quiet", body), (l) =>
+    io.out(
+      l.outcome === "not_quieted"
+        ? "It is not quieted, so nothing changed."
+        : "Left quiet.",
+    ),
+  );
+};
+
+const BATCHED: Record<Answers["set_batched"]["outcome"], string> = {
+  batched: "Batched. Its mail comes back to your inbox at your arrival hours.",
+  unbatched: "No longer batched.",
+  unchanged: "It was already so, or is not a home that can be batched.",
+  no_hours:
+    "Set your arrival hours on the account page first: they are when batched mail comes back.",
+  cannot:
+    "A mailbox filing it cannot return mail in batches, or nothing files it now.",
+};
+
+/** `brood batch <home> on|off`. */
+const batch: Run = async (io, style, options, args) => {
+  const [name, setting, ...rest] = args;
+  if (name === undefined || setting === undefined || rest.length)
+    throw new Refusal("brood batch takes a home and on or off.");
+  if (setting !== "on" && setting !== "off")
+    throw new Refusal("brood batch takes on or off.");
+  const classification = await homeIn(
+    io,
+    style,
+    options,
+    name,
+    "active",
+    "brood batch",
+  );
+  shown(
+    io,
+    style,
+    await call(io, "set_batched", {
+      ...owner(options),
+      classification,
+      batched: setting === "on",
+    }),
+    (b) => io.out(BATCHED[b.outcome]),
+  );
+};
+
+const CANNOT_ADOPT: Record<AdoptRefusalWord, string> = {
+  matches_more: "it matches more than a sender",
+  not_one_sender: "it names no one sender",
+  keeps_in_inbox: "it leaves mail in the inbox",
+  forwards: "it forwards",
+  does_more: "it does more than file",
+  no_home: "it files under none of your homes",
+  several_homes: "it files under several homes",
+};
+
+const isAdoptRefusal = (o: AdoptOutcome): o is AdoptRefusalWord =>
+  (ADOPT_REFUSALS as readonly string[]).includes(o);
+
+const ADOPTED: Record<Exclude<AdoptOutcome, AdoptRefusalWord>, string> = {
+  adopted:
+    "Taken over. Brood files that sender as your filter did, and brood unhush puts your filter back.",
+  gone: "That filter is no longer in the mailbox.",
+  no_mail: "Brood has no mail from its sender yet.",
+  not_root: "It names a part of a domain, which Brood does not file by.",
+  already_brood: "Brood already files or has quieted that sender.",
+  never_quiet: "Your never-quiet list keeps that sender in view.",
+  unrenderable: "Its sender is not one a filter of Brood's can hold exactly.",
+  not_connected: "That mailbox is not connected.",
+};
+
+const adoptedSaid = (o: AdoptOutcome) =>
+  isAdoptRefusal(o)
+    ? `Brood cannot take it over: ${CANNOT_ADOPT[o]}.`
+    : ADOPTED[o];
+
+/** `brood own-rules`, your filters read now; `adopt <mailbox> <id>` takes one over. */
+const ownRules: Run = async (io, style, options, args) => {
+  const [verb, ...rest] = args;
+  if (verb === undefined) {
+    without(options, ["yes"], "brood own-rules");
+    const answer = await call(io, "list_own_rules", owner(options));
+    return shown(io, style, answer, (a) => {
+      if (!a.mailboxes.length) return io.out("No mailbox is connected.");
+      for (const m of a.mailboxes) {
+        io.out(clean(m.mailbox));
+        if (m.rules === null) {
+          io.out("  Brood could not read its filters just now.");
+          continue;
+        }
+        if (!m.rules.shown.length)
+          io.out("  No filter of yours names one sender.");
+        rows(
+          io,
+          m.rules.shown.map((f) => [
+            "",
+            clean(f.sender.value),
+            clean(f.under.join(", ")),
+            f.cannot_adopt ? CANNOT_ADOPT[f.cannot_adopt] : "can be taken over",
+            dim(style, f.id),
+          ]),
+        );
+        if (m.rules.unreadable)
+          io.out(
+            `  ${m.rules.unreadable === 1 ? "One more names" : `${m.rules.unreadable} more name`} no one sender.`,
+          );
+        for (const l of m.rules.left_behind)
+          io.out(`  ${clean(l.by)} left ${l.homes.map(clean).join(", ")}.`);
+      }
+    });
+  }
+  if (verb !== "adopt")
+    throw new Refusal(`brood own-rules takes adopt, not ${clean(verb)}.`);
+  const [mailbox, rule, ...more] = rest;
+  if (mailbox === undefined || rule === undefined || more.length)
+    throw new Refusal(
+      "brood own-rules adopt takes a mailbox and a filter's id, as brood own-rules lists them.",
+    );
+  const { accounts } = (await call(io, "list_accounts", owner(options))).data;
+  const account = accounts.find(
+    (a) => a.id === mailbox || same(a.address, mailbox),
+  );
+  if (!account)
+    throw new Refusal(`${clean(mailbox)} is not one of your mailboxes.`);
+  if (
+    !(await agreed(
+      io,
+      style,
+      options,
+      `Take over filter ${clean(rule)} in ${clean(account.address)}, so Brood files its sender?`,
+      false,
+    ))
+  )
+    return;
+  shown(
+    io,
+    style,
+    await call(io, "adopt_rule", {
+      ...owner(options),
+      account: account.id,
+      rule,
+    }),
+    (a) => io.out(adoptedSaid(a.outcome)),
+  );
+};
+
+/**
+ * One address and its sender id, found in its root's portrait as its page
+ * finds it: the root by a row of `list_senders` it is under, then the
+ * address among the root's.
+ */
+async function addressOf(
+  io: Io,
+  options: Options,
+  address: string,
+): Promise<Answers["get_sender"]["addresses"][number]> {
+  const at = address.lastIndexOf("@");
+  if (at <= 0)
+    throw new Refusal(
+      `${clean(address)} is not an address: name the one to keep out, such as alerts@example.com.`,
+    );
+  const domain = address.slice(at + 1).toLowerCase();
+  const since = daysBack(io, PORTRAIT_DAYS);
+  let cursor: string | undefined;
+  for (let n = 0; n < LOOKUP_PAGES; n++) {
+    const answer = await call(io, "list_senders", {
+      ...owner(options),
+      since,
+      limit: API_PAGE_MAX,
+      ...(cursor ? { cursor } : {}),
+    });
+    const row = answer.data.senders.find(({ sender_written: w }) =>
+      w.address === null
+        ? domain === w.root.toLowerCase() ||
+          domain.endsWith(`.${w.root.toLowerCase()}`)
+        : same(w.address, address),
+    );
+    if (row) {
+      const portrait = (
+        await call(io, "get_sender", { ...owner(options), sender: row.id })
+      ).data;
+      const found = portrait.addresses.find((a) =>
+        same(a.sender_written.address, address),
+      );
+      if (found) return found;
+      throw new Refusal(
+        portrait.more_addresses
+          ? `${clean(address)} is not among the addresses Brood lists for ${clean(row.sender_written.root)}.`
+          : `Brood has no mail from ${clean(address)} from ${since}.`,
+      );
+    }
+    if (!answer.next)
+      throw new Refusal(
+        `Brood has no mail from ${clean(address)} from ${since}.`,
+      );
+    cursor = answer.next;
+  }
+  throw tooMany(address);
+}
+
+const KEPT_OUT: Record<Answers["keep_out"]["outcome"], string> = {
+  kept_out:
+    "Kept out. Brood will not file it again, and its mail is coming back to your inbox, the first of it now and the rest within the hour.",
+  kept_out_pending:
+    "Kept out, and its mail is coming back. Brood narrows the filter itself within the hour; until then new mail from it may still be filed.",
+  own_home: "It has a home of its own: brood unhush undoes that.",
+  not_filed: "Nothing files it now.",
+  unrenderable:
+    "Its address is not one a filter can leave out exactly, so nothing changed.",
+};
+
+/** `brood keep-out <address>`: one address out of its domain's filing. */
+const keepOutCommand: Run = async (io, style, options, args) => {
+  const found = await addressOf(io, options, one(args, "address"));
+  const filed = found.filing.flatMap((f) =>
+    f.classification ? [f.classification.sender_written.path] : [],
+  );
+  if (!filed.length)
+    throw new Refusal(
+      `Nothing files ${clean(found.sender_written.address)} now.`,
+    );
+  if (
+    !(await agreed(
+      io,
+      style,
+      options,
+      `Keep ${clean(found.sender_written.address)} out of ${[...new Set(filed)].map(clean).join(", ")}, and bring its mail back?`,
+      false,
+    ))
+  )
+    return;
+  shown(
+    io,
+    style,
+    await call(io, "keep_out", { ...owner(options), sender: found.id }),
+    (k) => io.out(KEPT_OUT[k.outcome]),
+  );
+};
+
+const FILED_EXISTING: Record<Answers["file_existing"]["outcome"], string> = {
+  filed: "Filed what was already there.",
+  continues: "Filing what was already there; the hourly pass files the rest.",
+  later: "Today's filing is spent; the hourly pass files it.",
+  stopped: "It no longer files, so nothing more was moved.",
+};
+
+const RULE_BOOK_SAID: Record<Answers["reset_rule_book"]["outcome"], string> = {
+  saved: "Saved. Brood decides by them from its next run.",
+  unchanged: "They were already so, so nothing changed.",
+  no_mailbox:
+    "Connect a mailbox first: with none, the numbers apply to nothing.",
+  stale:
+    "The numbers changed since this was checked, so nothing was saved. Run it again.",
+};
+
+/** `name=value`, each a rule book number, as `brood rule-book set` takes them. */
+function numbersOf(args: string[]): Partial<Record<ThresholdName, number>> {
+  if (!args.length)
+    throw new Refusal(
+      `Name a number to change, as name=value: ${RULE_BOOK_KEYS.join(", ")}.`,
+    );
+  const numbers: Partial<Record<ThresholdName, number>> = {};
+  for (const arg of args) {
+    const parts = arg.split("=");
+    if (parts.length !== 2)
+      throw new Refusal(
+        `${clean(arg)} is not name=value, as quiet.silence_days=60.`,
+      );
+    const [name = "", value = ""] = parts;
+    const key = RULE_BOOK_KEYS.find((k) => k === name);
+    if (!key)
+      throw new Refusal(
+        `${clean(name)} is not one of the rule book's numbers: ${RULE_BOOK_KEYS.join(", ")}.`,
+      );
+    if (!/^\d+$/.test(value))
+      throw new Refusal(`${key} takes a whole number, as ${key}=60.`);
+    numbers[key] = Number(value);
+  }
+  return numbers;
+}
+
+const differences = (d: Answers["set_rule_book"]["sender_written"]) => {
+  if (d === null) return [];
+  const said = (
+    which: NonNullable<typeof d>["more"],
+    would: string,
+  ): string[] => [
+    ...which.homes.map((p) => `${would} propose ${clean(p)}`),
+    ...which.quieted.map((p) => `${would} quiet ${clean(p)}`),
+    ...which.declined.map((p) => `${would} stop filing ${clean(p)}`),
+    ...which.relationships.map((p) => `${would} suggest ${clean(p)}`),
+  ];
+  return [...said(d.more, "would"), ...said(d.fewer, "would no longer")];
+};
+
+/** `brood rule-book`, and changing its numbers or putting them back. */
+const ruleBook: Run = async (io, style, options, args) => {
+  const [verb, ...rest] = args;
+  if (verb === undefined) {
+    without(options, ["check", "yes"], "brood rule-book");
+    return shown(
+      io,
+      style,
+      await call(io, "get_rule_book", owner(options)),
+      (b) => {
+        rows(
+          io,
+          RULE_BOOK_KEYS.map((k) => [
+            k,
+            String(b.numbers[k]),
+            b.numbers[k] === b.defaults[k]
+              ? ""
+              : dim(style, `default ${b.defaults[k]}`),
+          ]),
+        );
+        if (b.ignored.length)
+          io.out(
+            `Brood could not use your ${b.ignored.join(", ")}, so the default stands in.`,
+          );
+        if (!b.can_change) io.out("Changing them is Pro's.");
+      },
+    );
+  }
+  if (verb === "reset") {
+    without(options, ["check"], "brood rule-book reset");
+    none(rest);
+    if (
+      !(await agreed(
+        io,
+        style,
+        options,
+        "Put every number back to its default?",
+        false,
+      ))
+    )
+      return;
+    return shown(
+      io,
+      style,
+      await call(io, "reset_rule_book", owner(options)),
+      (r) => io.out(RULE_BOOK_SAID[r.outcome]),
+    );
+  }
+  if (verb !== "set")
+    throw new Refusal(
+      `brood rule-book takes set or reset, not ${clean(verb)}.`,
+    );
+  noCheckAndYes(options);
+  const numbers = numbersOf(rest);
+  const checked = await call(io, "set_rule_book", {
+    ...owner(options),
+    numbers,
+    check: true,
+  });
+  previewed(io, style, options, checked, () => {
+    const said = differences(checked.data.sender_written);
+    if (!said.length) io.out("Brood would decide nothing differently today.");
+    else for (const line of said) io.out(`Brood ${line}.`);
+  });
+  if (options.check) return;
+  const inForce = checked.data.in_force;
+  if (inForce === null) throw new Refusal("Brood did not check the change.");
+  if (!(await agreed(io, style, options, "Save these numbers?"))) return;
+  shown(
+    io,
+    style,
+    await call(io, "set_rule_book", {
+      ...owner(options),
+      numbers,
+      in_force: inForce,
+    }),
+    (r) => io.out(RULE_BOOK_SAID[r.outcome ?? "saved"]),
+  );
+};
+
 /** Each command, and the options it takes, so one it does not is refused rather than ignored. */
 export const COMMANDS: Record<string, { run: Run; takes: OptionName[] }> = {
   accounts: { run: accounts, takes: [] },
@@ -1364,6 +1845,11 @@ export const COMMANDS: Record<string, { run: Run; takes: OptionName[] }> = {
   keep: { run: keep, takes: ["check", "yes", "limit", "cursor"] },
   relationships: { run: relationships, takes: ["group", "check", "yes"] },
   groups: { run: groups, takes: [] },
+  quieted: { run: quieted, takes: ["limit", "cursor"] },
+  batch: { run: batch, takes: [] },
+  "own-rules": { run: ownRules, takes: ["yes"] },
+  "keep-out": { run: keepOutCommand, takes: ["yes"] },
+  "rule-book": { run: ruleBook, takes: ["check", "yes"] },
   proposals: { run: proposals, takes: ["all", "check", "yes"] },
   unsubscribe: { run: unsubscribeCommand, takes: ["all", "check", "yes"] },
 };

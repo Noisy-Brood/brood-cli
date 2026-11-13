@@ -1776,3 +1776,326 @@ describe("hush by hand, under a root filed address by address (#1355)", () => {
     assert.match(s.err.join("\n"), /^Brood does not file vendor\.com by hand/);
   });
 });
+
+describe("quieted homes and batching (#1729)", () => {
+  it("brings back the quieted one a name means, not the active one beside it", async () => {
+    const s = await signedIn({
+      [api("list_classifications")]: [
+        () =>
+          envelope({
+            classifications: [
+              classification(
+                1,
+                "vendor.test",
+                "active",
+                "external/vendor.test/a",
+              ),
+              classification(2, "vendor.test", "quieted"),
+            ],
+          }),
+      ],
+      [api("restore_quieted")]: [
+        () => envelope({ id: ID(2), outcome: "restored_later" }),
+      ],
+    });
+    assert.equal(await run(s.io, ["quieted", "restore", "vendor.test"]), 0);
+    assert.deepEqual(JSON.parse(s.sent.at(-1)!.body), {
+      classification: ID(2),
+    });
+    assert.match(s.out.at(-1)!, /at the next rules pass/);
+  });
+
+  it("leaves one quiet, and refuses one nothing quieted covers", async () => {
+    const s = await signedIn({
+      [api("list_classifications")]: [
+        () =>
+          envelope({
+            classifications: [classification(2, "vendor.test", "quieted")],
+          }),
+        () =>
+          envelope({
+            classifications: [classification(1, "acme.test", "active")],
+          }),
+      ],
+      [api("leave_quiet")]: [
+        () => envelope({ id: ID(2), outcome: "answered" }),
+      ],
+    });
+    assert.equal(await run(s.io, ["quieted", "leave", "vendor.test"]), 0);
+    assert.equal(s.out.at(-1), "Left quiet.");
+    assert.equal(await run(s.io, ["quieted", "leave", "acme.test"]), 1);
+    assert.ok(!s.sent.some((x, i) => i > 1 && x.url === api("leave_quiet")));
+  });
+
+  it("batches a filed home, and refuses a setting it does not have before calling", async () => {
+    const s = await signedIn({
+      [api("list_classifications")]: [
+        () =>
+          envelope({
+            classifications: [classification(1, "vendor.test", "active")],
+          }),
+      ],
+      [api("set_batched")]: [
+        () => envelope({ id: ID(1), outcome: "no_hours" }),
+      ],
+    });
+    assert.equal(await run(s.io, ["batch", "vendor.test", "on"]), 0);
+    assert.deepEqual(JSON.parse(s.sent.at(-1)!.body), {
+      classification: ID(1),
+      batched: true,
+    });
+    assert.match(s.out.at(-1)!, /arrival hours/);
+    const sent = s.sent.length;
+    assert.equal(await run(s.io, ["batch", "vendor.test", "yes"]), 1);
+    assert.equal(s.sent.length, sent);
+  });
+});
+
+describe("your own filters (#1729)", () => {
+  const listed = () =>
+    envelope({
+      mailboxes: [
+        {
+          account: ID(7),
+          mailbox: "me@work.test",
+          rules: {
+            shown: [
+              {
+                id: "F1",
+                sender: { kind: "domain", value: "news\u001b[2J.test" },
+                under: ["Reading"],
+                does: ["out_of_inbox"],
+                cannot_adopt: null,
+              },
+              {
+                id: "F2",
+                sender: { kind: "address", value: "boss@work.test" },
+                under: ["Boss"],
+                does: ["starred"],
+                cannot_adopt: "keeps_in_inbox",
+              },
+            ],
+            unreadable: 1,
+            left_behind: [{ by: "SaneBox", homes: ["@SaneLater"] }],
+          },
+        },
+        { account: ID(8), mailbox: "me@home.test", rules: null },
+      ],
+    });
+
+  it("lists each mailbox's filters, cleaned, with why one cannot be taken over", async () => {
+    const s = await signedIn({ [api("list_own_rules")]: [listed] });
+    assert.equal(await run(s.io, ["own-rules"]), 0);
+    assert.deepEqual(s.out, [
+      "me@work.test",
+      "  news[2J.test    Reading  can be taken over            F1",
+      "  boss@work.test  Boss     it leaves mail in the inbox  F2",
+      "  One more names no one sender.",
+      "  SaneBox left @SaneLater.",
+      "me@home.test",
+      "  Brood could not read its filters just now.",
+    ]);
+  });
+
+  it("asks before taking one over, sends nothing on a no, and finds the mailbox by its address", async () => {
+    const accounts = () =>
+      envelope({
+        accounts: [{ id: ID(7), address: "me@work.test", connected: true }],
+      });
+    const s = await signedIn({
+      [api("list_accounts")]: [accounts, accounts],
+      [api("adopt_rule")]: [() => envelope({ outcome: "keeps_in_inbox" })],
+    });
+    s.io.ask = async () => "n";
+    assert.equal(
+      await run(s.io, ["own-rules", "adopt", "me@work.test", "F2"]),
+      0,
+    );
+    assert.ok(!s.sent.some((x) => x.url === api("adopt_rule")));
+    assert.equal(
+      await run(s.io, ["own-rules", "adopt", "ME@work.test", "F2", "--yes"]),
+      0,
+    );
+    assert.deepEqual(JSON.parse(s.sent.at(-1)!.body), {
+      account: ID(7),
+      rule: "F2",
+    });
+    assert.equal(
+      s.out.at(-1),
+      "Brood cannot take it over: it leaves mail in the inbox.",
+    );
+  });
+});
+
+describe("keep-out (#1729)", () => {
+  const portrait = (address: string, filed: boolean) =>
+    envelope({
+      ...sender(null),
+      addresses: [
+        {
+          id: ID(5),
+          messages: 3,
+          last: null,
+          never_quiet: false,
+          kept_out: false,
+          filing: [
+            {
+              mailbox: "me@work.test",
+              classification: filed
+                ? {
+                    id: ID(3),
+                    state: "active",
+                    sender_written: { path: "external/vendor.test" },
+                  }
+                : null,
+            },
+          ],
+          sender_written: { address, domain: "mail.vendor.test", names: [] },
+        },
+      ],
+    });
+
+  it("finds an address under its root, asks, and keeps it out", async () => {
+    const s = await signedIn({
+      [api("list_senders")]: [
+        () => envelope(senders([{ root: "vendor.test", messages: 9 }])),
+      ],
+      [api("get_sender")]: [() => portrait("alerts@mail.vendor.test", true)],
+      [api("keep_out")]: [
+        () => envelope({ id: ID(5), outcome: "kept_out", returning: [ID(7)] }),
+      ],
+    });
+    const asked: string[] = [];
+    s.io.ask = async (q) => (asked.push(q), "y");
+    assert.equal(await run(s.io, ["keep-out", "alerts@mail.vendor.test"]), 0);
+    assert.match(asked[0]!, /out of external\/vendor\.test/);
+    assert.deepEqual(JSON.parse(s.sent.at(-1)!.body), { sender: ID(5) });
+    assert.match(s.out.at(-1)!, /^Kept out\./);
+  });
+
+  it("refuses one nothing files, and a domain, asking nothing", async () => {
+    const s = await signedIn({
+      [api("list_senders")]: [
+        () => envelope(senders([{ root: "vendor.test", messages: 9 }])),
+      ],
+      [api("get_sender")]: [() => portrait("alerts@vendor.test", false)],
+    });
+    s.io.ask = async () => assert.fail("asked");
+    assert.equal(await run(s.io, ["keep-out", "alerts@vendor.test"]), 1);
+    assert.equal(await run(s.io, ["keep-out", "vendor.test"]), 1);
+    assert.ok(!s.sent.some((x) => x.url === api("keep_out")));
+  });
+});
+
+describe("rules file (#1729)", () => {
+  it("files what is already there for one rule, by its id", async () => {
+    const s = await signedIn({
+      [api("file_existing")]: [
+        () => envelope({ id: ID(4), outcome: "continues", filed: 12 }),
+      ],
+    });
+    assert.equal(await run(s.io, ["rules", "file", ID(4)]), 0);
+    assert.deepEqual(JSON.parse(s.sent.at(-1)!.body), { rule: ID(4) });
+    assert.match(s.out.at(-1)!, /12 messages filed so far\.$/);
+    assert.equal(await run(s.io, ["rules", "file", "nope"]), 1);
+  });
+});
+
+describe("the rule book (#1729)", () => {
+  const NUMBERS = {
+    "file.min_events": 10,
+    "file.window_days": 30,
+    "file.subdomain_split": 3,
+    "quiet.silence_days": 60,
+    "quiet.correction_streak": 3,
+    "surface.reply_window_days": 7,
+    "surface.relationship_silence_days": 30,
+    "relationship.window_months": 3,
+    "relationship.min_active_months": 2,
+    "relationship.min_inbound": 4,
+    "relationship.inbound_per_reply": 3,
+  };
+  const none = { homes: [], quieted: [], declined: [], relationships: [] };
+  const checked = () =>
+    envelope({
+      checked: true,
+      outcome: null,
+      in_force: NUMBERS,
+      sender_written: {
+        more: none,
+        fewer: { ...none, quieted: ["external/old\u001b.test"] },
+      },
+    });
+
+  it("shows a change, asks, and saves it against the numbers it was checked with", async () => {
+    const s = await signedIn({
+      [api("set_rule_book")]: [
+        checked,
+        () =>
+          envelope({
+            checked: false,
+            outcome: "saved",
+            in_force: null,
+            sender_written: null,
+          }),
+      ],
+    });
+    s.io.ask = async () => "y";
+    assert.equal(
+      await run(s.io, ["rule-book", "set", "quiet.silence_days=90"]),
+      0,
+    );
+    assert.deepEqual(JSON.parse(s.sent[0]!.body), {
+      numbers: { "quiet.silence_days": 90 },
+      check: true,
+    });
+    assert.deepEqual(JSON.parse(s.sent[1]!.body), {
+      numbers: { "quiet.silence_days": 90 },
+      in_force: NUMBERS,
+    });
+    assert.deepEqual(s.out, [
+      "Brood would no longer quiet external/old.test.",
+      "Saved. Brood decides by them from its next run.",
+    ]);
+  });
+
+  it("stops after the check with --check, and refuses a name or value it lacks before calling", async () => {
+    const s = await signedIn({ [api("set_rule_book")]: [checked] });
+    assert.equal(
+      await run(s.io, ["rule-book", "set", "quiet.silence_days=90", "--check"]),
+      0,
+    );
+    assert.equal(s.sent.length, 1);
+    for (const argv of [
+      ["rule-book", "set"],
+      ["rule-book", "set", "quiet.nothing=5"],
+      ["rule-book", "set", "quiet.silence_days=ninety"],
+      ["rule-book", "set", "quiet.silence_days=90=1"],
+      ["rule-book", "set", "quiet.silence_days=90", "--check", "--yes"],
+    ])
+      assert.equal(await run(s.io, argv), 1, argv.join(" "));
+    assert.equal(s.sent.length, 1);
+  });
+
+  it("lists the numbers with a default beside one changed, and resets with --yes", async () => {
+    const s = await signedIn({
+      [api("get_rule_book")]: [
+        () =>
+          envelope({
+            numbers: { ...NUMBERS, "quiet.silence_days": 90 },
+            defaults: NUMBERS,
+            ignored: [],
+            can_change: true,
+          }),
+      ],
+      [api("reset_rule_book")]: [() => envelope({ outcome: "saved" })],
+    });
+    s.io.env.NO_COLOR = "1";
+    assert.equal(await run(s.io, ["rule-book"]), 0);
+    assert.ok(
+      s.out.some((l) => /^quiet\.silence_days\s+90\s+default 60$/.test(l)),
+    );
+    assert.equal(await run(s.io, ["rule-book", "reset", "--yes"]), 0);
+    assert.equal(s.sent.at(-1)!.url, api("reset_rule_book"));
+  });
+});

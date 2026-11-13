@@ -1,6 +1,17 @@
 import { APP_ORIGIN } from "./origin.ts";
 import type {
   ADDRESSED,
+  AdoptOutcome,
+  AdoptRefusalWord,
+  BatchOutcome,
+  FileExistingOutcome,
+  KeepOutWord,
+  LeaveQuietOutcome,
+  OwnRuleDoesWord,
+  RestoreOutcome,
+  RuleBookOutcome,
+  ThresholdName,
+  Thresholds,
   ClassificationReason,
   ClassificationState,
   RelationshipOutcome,
@@ -75,6 +86,18 @@ export type Arguments = {
   rename_group: OwnerArgument & { group: string; name: string };
   set_group_comes_back: OwnerArgument & { group: string; comes_back: boolean };
   remove_group: OwnerArgument & { group: string };
+  restore_quieted: OwnerArgument & { classification: string };
+  leave_quiet: OwnerArgument & { classification: string };
+  set_batched: OwnerArgument & { classification: string; batched: boolean };
+  list_own_rules: OwnerArgument;
+  adopt_rule: OwnerArgument & { account: string; rule: string };
+  keep_out: OwnerArgument & { sender: string };
+  file_existing: OwnerArgument & { rule: string };
+  get_rule_book: OwnerArgument;
+  set_rule_book: OwnerArgument & { numbers: Partial<Thresholds> } & (
+      { check: true } | { check?: false; in_force: Thresholds }
+    );
+  reset_rule_book: OwnerArgument;
   end_session: { refresh_token: string };
   list_kept: OwnerArgument & PageArguments;
   hush: OwnerArgument &
@@ -476,6 +499,87 @@ export type Answers = {
   rename_group: GroupChanged;
   set_group_comes_back: GroupChanged;
   remove_group: GroupChanged;
+  restore_quieted: { id: string; outcome: RestoreOutcome };
+  leave_quiet: { id: string; outcome: LeaveQuietOutcome };
+  set_batched: { id: string; outcome: BatchOutcome };
+  list_own_rules: ListOwnRules;
+  adopt_rule: { outcome: AdoptOutcome };
+  keep_out: KeepOut;
+  file_existing: FileExisting;
+  get_rule_book: RuleBook;
+  set_rule_book: SetRuleBook;
+  reset_rule_book: { outcome: RuleBookOutcome };
+};
+
+/**
+ * Your own filters in each connected mailbox, read when asked and kept
+ * nowhere. `rules` is null where reading a mailbox failed.
+ */
+export type ListOwnRules = {
+  mailboxes: {
+    account: string;
+    mailbox: string;
+    rules: {
+      shown: {
+        /** The provider's id for it, which `adopt_rule` takes. */
+        id: string;
+        /** The one sender it names. */
+        sender: { kind: "address" | "domain"; value: string };
+        /** The homes of yours it files under, by name. */
+        under: string[];
+        does: OwnRuleDoesWord[];
+        /** Why Brood could not take it over, or null where it could. */
+        cannot_adopt: AdoptRefusalWord | null;
+      }[];
+      /** Filters that name no one sender Brood can say. */
+      unreadable: number;
+      /** Homes another product left behind, by the product. */
+      left_behind: { by: string; homes: string[] }[];
+    } | null;
+  }[];
+};
+
+/** A sender kept out, and the mailboxes its mail is coming back to, by account id. */
+export type KeepOut = { id: string; outcome: KeepOutWord; returning: string[] };
+
+/** What a filter filed of the mail already there, and whether it is done. */
+export type FileExisting = {
+  id: string;
+  outcome: FileExistingOutcome;
+  /** Filed of what was already there so far, by this call and any before. */
+  filed: number;
+};
+
+/** The rule book's numbers for this person. */
+export type RuleBook = {
+  numbers: Thresholds;
+  defaults: Thresholds;
+  /** Numbers of yours Brood could not use, so the default stands in. */
+  ignored: ThresholdName[];
+  /** Whether you can change them, which is Pro's. */
+  can_change: boolean;
+};
+
+/** What a run would decide with one set of numbers and not the other, by path. */
+export type RuleBookDifference = {
+  homes: string[];
+  quieted: string[];
+  declined: string[];
+  relationships: string[];
+};
+
+/**
+ * A change checked, with what it would do and the numbers in force it was
+ * read against, or what came of saving it.
+ */
+export type SetRuleBook = {
+  checked: boolean;
+  outcome: RuleBookOutcome | null;
+  in_force: Thresholds | null;
+  sender_written: {
+    more: RuleBookDifference;
+    fewer: RuleBookDifference;
+  } | null;
 };
 
 /** Who a relationship or a suggestion covers. Its name may be a sender's domain. */

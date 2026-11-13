@@ -118,6 +118,158 @@ export const RELATIONSHIP_REMOVAL =
 export const SUGGESTION_OUTCOMES = ["done", "not_suggested"] as const;
 export type SuggestionOutcome = (typeof SUGGESTION_OUTCOMES)[number];
 
+/**
+ * What came of restoring a quieted home: active again with its homes moved
+ * back, with a home the person renamed or removed left as it is, or with one
+ * a later rules pass moves back; or it was not quieted.
+ */
+export const RESTORE_OUTCOMES = [
+  "restored",
+  "restored_left",
+  "restored_later",
+  "not_quieted",
+] as const;
+export type RestoreOutcome = (typeof RESTORE_OUTCOMES)[number];
+
+/**
+ * What came of leaving a quieted home quiet after its sender wrote again:
+ * answered; quiet already, answered before or with nothing to answer; or not
+ * quieted.
+ */
+export const LEAVE_QUIET_OUTCOMES = [
+  "answered",
+  "already",
+  "not_quieted",
+] as const;
+export type LeaveQuietOutcome = (typeof LEAVE_QUIET_OUTCOMES)[number];
+
+/**
+ * What came of marking a home batched, or taking the mark off: as asked;
+ * already so, or not a home that can be marked; no arrival hours set yet; or
+ * a mailbox filing it cannot return mail in batches, or none is filing it.
+ */
+export const BATCH_OUTCOMES = [
+  "batched",
+  "unbatched",
+  "unchanged",
+  "no_hours",
+  "cannot",
+] as const;
+export type BatchOutcome = (typeof BATCH_OUTCOMES)[number];
+
+/**
+ * Why one of your own filters cannot be taken over as it stands: it matches
+ * more than a sender, names no one sender, keeps mail in the inbox, forwards,
+ * does more than file, or files under none of your homes, or several.
+ */
+export const ADOPT_REFUSALS = [
+  "matches_more",
+  "not_one_sender",
+  "keeps_in_inbox",
+  "forwards",
+  "does_more",
+  "no_home",
+  "several_homes",
+] as const;
+export type AdoptRefusalWord = (typeof ADOPT_REFUSALS)[number];
+
+/**
+ * What came of taking over one of your own filters: taken over; refused for
+ * a reason in `ADOPT_REFUSALS`; gone from the mailbox; no mail from its
+ * sender yet; a part of a domain; a sender Brood already files or has
+ * quieted; one your never-quiet list keeps in view; one a filter cannot hold
+ * exactly; or its mailbox not connected.
+ */
+export const ADOPT_OUTCOMES = [
+  "adopted",
+  ...ADOPT_REFUSALS,
+  "gone",
+  "no_mail",
+  "not_root",
+  "already_brood",
+  "never_quiet",
+  "unrenderable",
+  "not_connected",
+] as const;
+export type AdoptOutcome = (typeof ADOPT_OUTCOMES)[number];
+
+/** What one of your own filters does. */
+export const OWN_RULE_DOES = [
+  "out_of_inbox",
+  "trash",
+  "read",
+  "starred",
+  "important",
+  "forwards",
+] as const;
+export type OwnRuleDoesWord = (typeof OWN_RULE_DOES)[number];
+
+/**
+ * What came of keeping a sender out of a filing: kept out, its mail coming
+ * back; the same, with a filter the hourly reconcile has yet to narrow; a
+ * sender with a home of its own, to unhush instead; nothing files it; or an
+ * address a filter cannot hold exactly.
+ */
+export const KEEP_OUT_OUTCOMES = [
+  "kept_out",
+  "kept_out_pending",
+  "own_home",
+  "not_filed",
+  "unrenderable",
+] as const;
+export type KeepOutWord = (typeof KEEP_OUT_OUTCOMES)[number];
+
+/**
+ * What came of filing what a filter would have filed had it been there
+ * already: all of it; some, the hourly rules pass filing the rest; none now,
+ * today's allowance being spent, so the pass files it; or none, since it
+ * stopped being one to file with.
+ */
+export const FILE_EXISTING_OUTCOMES = [
+  "filed",
+  "continues",
+  "later",
+  "stopped",
+] as const;
+export type FileExistingOutcome = (typeof FILE_EXISTING_OUTCOMES)[number];
+
+/**
+ * What came of changing the rule book's numbers: saved; the same as before,
+ * so nothing written; refused with no mailbox connected, where they apply to
+ * nothing; or refused as stale, the numbers in force no longer the ones the
+ * change was read against.
+ */
+export const RULE_BOOK_OUTCOMES = [
+  "saved",
+  "unchanged",
+  "no_mailbox",
+  "stale",
+] as const;
+export type RuleBookOutcome = (typeof RULE_BOOK_OUTCOMES)[number];
+
+/**
+ * The rule book's numbers by name, in the order the engine's defaults list
+ * them. Listed here, since the CLI's public mirror carries figures as plain
+ * values alone, and held equal to `DEFAULT_THRESHOLDS` by the API's own list.
+ */
+export const RULE_BOOK_KEYS = [
+  "file.min_events",
+  "file.window_days",
+  "file.subdomain_split",
+  "quiet.silence_days",
+  "quiet.correction_streak",
+  "surface.reply_window_days",
+  "surface.relationship_silence_days",
+  "relationship.window_months",
+  "relationship.min_active_months",
+  "relationship.min_inbound",
+  "relationship.inbound_per_reply",
+] as const;
+export type ThresholdName = (typeof RULE_BOOK_KEYS)[number];
+
+/** A number for each of the rule book's names. */
+export type Thresholds = Record<ThresholdName, number>;
+
 /** What came of asking for a declined classification to be proposed again. */
 export const REPROPOSE_OUTCOMES = [
   "reproposed",

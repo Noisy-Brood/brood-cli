@@ -11,8 +11,12 @@ import { depthOf, wrenIn } from "./wren.ts";
 /**
  * `brood`, the command line over Brood's index (DD10): it answers questions
  * about a mailbox without opening one, and changes it only by `hush`,
- * `unhush`, `proposals file`, `unsubscribe` and `keep add`, which changes Brood's filters to keep mail in
- * view. `relationships add` changes what Brood proposes, never the mailbox. Bare `brood` prints this help, never a report (DD10 §3), so it is
+ * `unhush`, `keep-out`, `rules file`, `batch`, `quieted restore`, `own-rules
+ * adopt`, `proposals file`, `unsubscribe` and `keep add`, which changes
+ * Brood's filters to keep mail in view; `own-rules` reads the mailbox's own
+ * filters. `relationships add` changes what Brood proposes, never the
+ * mailbox, and the rule book what Brood decides on its next run, which can
+ * quiet a home or stop filing one. Bare `brood` prints this help, never a report (DD10 §3), so it is
  * never a status glanced at, under the wren.
  */
 
@@ -29,10 +33,24 @@ Structure
   brood classifications [<path>]    what Brood has decided, and its state
   brood classification <id>         one, with the reason for its state
   brood rules [<id>]                the filters Brood installed
+  brood rule-book                   the numbers Brood decides by
 
 Suppression, which changes your mailbox
   brood hush <domain|address|id>    file a sender, proposed or not
   brood unhush <domain|address|id>  undo the filing
+  brood keep-out <address>          keep one address out of its domain's filing, and bring its mail back
+  brood rules file <id>             file the mail already there that a filter would have filed
+  brood batch <home> on|off         bring a home's mail back at your arrival hours
+  brood quieted                     homes Brood quieted for their silence
+  brood quieted restore <home>      bring one back, filing again
+  brood quieted leave <home>        leave one quiet after its sender wrote again
+Your own filters
+  brood own-rules                   your filters in each mailbox, read now
+  brood own-rules adopt <mailbox> <id>
+                                    let Brood take one over, filing the same sender
+The rule book, which changes what Brood decides
+  brood rule-book set <name>=<n>... see what a change would do, then save it
+  brood rule-book reset             every number back to its default
 
 Proposals, what Brood would file
   brood proposals                   what it proposes; those marked ready can be filed together
@@ -82,8 +100,8 @@ Options
   --classification <id>  brood rules for one classification
   --all                  proposals file: those marked ready; unsubscribe: everyone listed
   --group <name>         relationships add, accept, move: the group they join, made if it is new
-  --check                keep add, relationships add and remove, proposals file, unsubscribe: say what it would do, and do nothing
-  --yes                  keep add, relationships add and remove, proposals file, unsubscribe: do it without asking
+  --check                keep add, relationships add and remove, proposals file, unsubscribe, rule-book set: say what it would do, and do nothing
+  --yes                  keep add, relationships add and remove, proposals file, unsubscribe, keep-out, own-rules adopt, rule-book set and reset: do it without asking
   --owner <user id>      the index of someone who granted you access
   --no-color             no dimming, as NO_COLOR also asks`;
 
