@@ -50,8 +50,21 @@ Keeping in view, which changes Brood's filters so it never files these senders
   brood keep add [<file>]           add addresses and domains, one a line, from a file or standard input
 
 Relationships, whose mail Brood gives a home of its own
+  brood relationships               who is on the list, and who Brood suggests
   brood relationships add --group <name> [<file>]
                                     add them to a group, one a line, as Name: domain, domain
+  brood relationships accept <who> --group <name>
+                                    take up a suggestion
+  brood relationships dismiss <who> set a suggestion aside for good
+  brood relationships move <who> --group <name>
+                                    put one in another group
+  brood relationships remove <who>  take one off the list; its mail stays filed
+  brood groups                      your groups
+  brood groups add <name>           make one
+  brood groups rename <name> <new>  rename one
+  brood groups comes-back <name> on|off
+                                    whether they return after a quiet spell
+  brood groups remove <name>        remove one with nobody in it
 
 Accounts and session
   brood accounts                    your mailboxes, and whether Brood can read them
@@ -68,9 +81,9 @@ Options
   --week <monday>        brood week for an earlier week
   --classification <id>  brood rules for one classification
   --all                  proposals file: those marked ready; unsubscribe: everyone listed
-  --group <name>         relationships add: the group they join, made if it is new
-  --check                keep add, relationships add, proposals file, unsubscribe: say what it would do, and do nothing
-  --yes                  keep add, relationships add, proposals file, unsubscribe: do it without asking
+  --group <name>         relationships add, accept, move: the group they join, made if it is new
+  --check                keep add, relationships add and remove, proposals file, unsubscribe: say what it would do, and do nothing
+  --yes                  keep add, relationships add and remove, proposals file, unsubscribe: do it without asking
   --owner <user id>      the index of someone who granted you access
   --no-color             no dimming, as NO_COLOR also asks`;
 

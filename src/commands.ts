@@ -1,8 +1,10 @@
 import {
+  RELATIONSHIP_REMOVAL,
   CLASSIFICATION_STATES,
   TONE_TITLES,
   type Answers,
   type Classification,
+  type GroupOutcome,
   type RelationshipOutcome,
   type ReproposeOutcome,
   type UnsubscribeOutcome,
@@ -858,6 +860,8 @@ async function fileProposals(
   noCheckAndYes(options);
   if (options.all && args.length)
     throw new Refusal("Name proposals or give --all, not both.");
+  if (args.length > PROPOSALS_AT_ONCE)
+    throw new Refusal(`Name at most ${PROPOSALS_AT_ONCE} at once.`);
   if (!options.all && args.length === 0)
     throw new Refusal(
       "Name the proposals to file, by id, or give --all for those marked ready.",
@@ -1073,13 +1077,234 @@ const unsubscribeCommand: Run = async (io, style, options, args) => {
   );
 };
 
+type Relationships = Answers["list_relationships"];
+
+const relationshipsNow = (io: Io, options: Options) =>
+  call(io, "list_relationships", { ...owner(options) });
+
+const written = (r: Relationships["relationships"][number]["sender_written"]) =>
+  [...r.domains, ...r.addresses].join(", ");
+
+/** One of `list`, by its id, its name, or a domain or address it covers. */
+function named<
+  T extends {
+    id: string;
+    sender_written: { name: string; domains: string[]; addresses: string[] };
+  },
+>(list: readonly T[], name: string, what: string): T {
+  const found = list.filter(
+    (r) =>
+      r.id === name ||
+      same(r.sender_written.name, name) ||
+      [...r.sender_written.domains, ...r.sender_written.addresses].some((d) =>
+        same(d, name),
+      ),
+  );
+  if (found.length === 0)
+    throw new Refusal(`${clean(name)} is not among your ${what}.`);
+  if (found.length > 1)
+    throw new Refusal(`Several match ${clean(name)}: name one by its id.`);
+  return found[0]!;
+}
+
+const GROUP_SAID: Record<GroupOutcome, string> = {
+  done: "Done.",
+  taken: "Another of your groups has that name.",
+  not_empty: "That group still has people in it. Move them first.",
+};
+
+/** `brood relationships`, and accepting, dismissing, moving or removing one. */
+async function relationshipVerbs(
+  io: Io,
+  style: Style,
+  options: Options,
+  verb: string | undefined,
+  args: string[],
+): Promise<void> {
+  const form = `brood relationships ${verb ?? ""}`.trim();
+  if (verb === undefined) {
+    without(options, ["group", "check", "yes"], form);
+    none(args);
+    const answer = await relationshipsNow(io, options);
+    return shown(io, style, answer, (a) => {
+      const inGroup = new Map(a.groups.map((g) => [g.id, g.name]));
+      if (a.relationships.length === 0 && a.suggestions.length === 0)
+        return io.out("No relationships yet.");
+      rows(
+        io,
+        a.relationships.map((r) => [
+          r.sender_written.name,
+          written(r.sender_written),
+          clean((r.group && inGroup.get(r.group)) ?? "no group"),
+          dim(style, r.id),
+        ]),
+      );
+      if (a.suggestions.length) {
+        io.out("Brood suggests:");
+        rows(
+          io,
+          a.suggestions.map((r) => [
+            r.sender_written.name,
+            written(r.sender_written),
+            dim(style, r.id),
+          ]),
+        );
+      }
+    });
+  }
+  if (!["accept", "dismiss", "move", "remove"].includes(verb))
+    throw new Refusal(
+      `brood relationships takes add, accept, dismiss, move or remove, not ${clean(verb)}.`,
+    );
+  const who = one(args, "relationship, by its id, name or domain");
+  const listed = await relationshipsNow(io, options);
+  const now = listed.data;
+  if (verb === "accept" || verb === "move") {
+    without(options, ["check", "yes"], form);
+    if (options.group === undefined)
+      throw new Refusal(
+        `${form} needs --group <name>: the group they join, made if it is new.`,
+      );
+    const relationship = named(
+      verb === "accept" ? now.suggestions : now.relationships,
+      who,
+      verb === "accept" ? "suggestions" : "relationships",
+    ).id;
+    const body = { ...owner(options), relationship, group: options.group };
+    if (verb === "accept")
+      return shown(io, style, await call(io, "accept_suggestion", body), (a) =>
+        io.out(
+          a.outcome === "done"
+            ? `Added. Brood proposes a home for their mail ${a.later ? "shortly" : "now, among your proposals"}.`
+            : "It is no longer a suggestion.",
+        ),
+      );
+    return shown(io, style, await call(io, "move_relationship", body), (m) =>
+      io.out(GROUP_SAID[m.outcome]),
+    );
+  }
+  if (verb === "dismiss") {
+    without(options, ["group", "check", "yes"], form);
+    return shown(
+      io,
+      style,
+      await call(io, "dismiss_suggestion", {
+        ...owner(options),
+        relationship: named(now.suggestions, who, "suggestions").id,
+      }),
+      (d) =>
+        io.out(
+          d.outcome === "done"
+            ? "Set aside. Brood will not suggest them again."
+            : "It is no longer a suggestion.",
+        ),
+    );
+  }
+  if (verb === "remove") {
+    without(options, ["group"], form);
+    noCheckAndYes(options);
+    const r = named(now.relationships, who, "relationships");
+    previewed(io, style, options, listed, () => {
+      rows(io, [[r.sender_written.name, written(r.sender_written)]]);
+      io.out(RELATIONSHIP_REMOVAL);
+    });
+    if (options.check) return;
+    if (
+      !(await agreed(
+        io,
+        style,
+        options,
+        `Remove ${clean(r.sender_written.name)}?`,
+      ))
+    )
+      return;
+    return shown(
+      io,
+      style,
+      await call(io, "remove_relationship", {
+        ...owner(options),
+        relationship: r.id,
+      }),
+      (m) => io.out(GROUP_SAID[m.outcome]),
+    );
+  }
+}
+
+/** `brood groups`, and adding, renaming, removing or setting one. */
+const groups: Run = async (io, style, options, args) => {
+  const [verb, ...rest] = args;
+  if (verb === undefined) {
+    none(rest);
+    return shown(io, style, await relationshipsNow(io, options), (a) => {
+      if (a.groups.length === 0) return io.out("No groups yet.");
+      rows(
+        io,
+        a.groups.map((g) => [
+          clean(g.name),
+          g.comes_back ? "comes back" : "stays filed",
+          dim(style, g.id),
+        ]),
+      );
+    });
+  }
+  if (verb === "add") {
+    const name = one(rest, "name for the group");
+    return shown(
+      io,
+      style,
+      await call(io, "add_group", { ...owner(options), name }),
+      (g) => io.out(GROUP_SAID[g.outcome]),
+    );
+  }
+  const [name, ...more] = rest;
+  if (name === undefined)
+    throw new Refusal(`Name the group to ${clean(verb)}.`);
+  if (!["rename", "comes-back", "remove"].includes(verb))
+    throw new Refusal(
+      `brood groups takes add, rename, comes-back or remove, not ${clean(verb)}.`,
+    );
+  const { groups: all } = (await relationshipsNow(io, options)).data;
+  const found = all.find((g) => g.id === name || same(g.name, name));
+  if (!found) throw new Refusal(`${clean(name)} is not one of your groups.`);
+  const group = found.id;
+  if (verb === "rename") {
+    const to = one(more, "new name");
+    return shown(
+      io,
+      style,
+      await call(io, "rename_group", { ...owner(options), group, name: to }),
+      (g) => io.out(GROUP_SAID[g.outcome]),
+    );
+  }
+  if (verb === "comes-back") {
+    const setting = one(more, "setting, on or off");
+    if (setting !== "on" && setting !== "off")
+      throw new Refusal("brood groups comes-back takes on or off.");
+    return shown(
+      io,
+      style,
+      await call(io, "set_group_comes_back", {
+        ...owner(options),
+        group,
+        comes_back: setting === "on",
+      }),
+      (g) => io.out(GROUP_SAID[g.outcome]),
+    );
+  }
+  none(more);
+  return shown(
+    io,
+    style,
+    await call(io, "remove_group", { ...owner(options), group }),
+    (g) => io.out(GROUP_SAID[g.outcome]),
+  );
+};
+
 /** `brood relationships add`, a list of them into one group. */
 const relationships: Run = async (io, style, options, args) => {
   const [verb, ...rest] = args;
-  if (verb !== "add")
-    throw new Refusal(
-      `brood relationships takes add${verb === undefined ? "" : `, not ${clean(verb)}`}.`,
-    );
+  if (verb === undefined || verb !== "add")
+    return relationshipVerbs(io, style, options, verb, rest);
   if (options.group === undefined)
     throw new Refusal(
       "brood relationships add needs --group <name>: the group they join, made if it is new.",
@@ -1138,6 +1363,7 @@ export const COMMANDS: Record<string, { run: Run; takes: OptionName[] }> = {
   unhush: { run: unhush, takes: [] },
   keep: { run: keep, takes: ["check", "yes", "limit", "cursor"] },
   relationships: { run: relationships, takes: ["group", "check", "yes"] },
+  groups: { run: groups, takes: [] },
   proposals: { run: proposals, takes: ["all", "check", "yes"] },
   unsubscribe: { run: unsubscribeCommand, takes: ["all", "check", "yes"] },
 };

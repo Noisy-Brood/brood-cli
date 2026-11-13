@@ -1341,10 +1341,9 @@ describe("relationships add (#659)", () => {
     assert.equal(s.out.at(-1), "No new relationships to add.");
   });
 
-  it("refuses a bare relationships, another verb, and a list from standard input without --yes, sending nothing", async () => {
+  it("refuses a bare customers-style verb, a missing group, and a list from standard input without --yes, sending nothing", async () => {
     for (const argv of [
-      ["relationships"],
-      ["relationships", "remove", "--group", "Investors"],
+      ["relationships", "rename", "x"],
       ["relationships", "add", "--group", "Investors"],
       ["relationships", "add", "--yes"],
       ["keep", "add", "--group", "Investors", "--yes"],
@@ -1553,6 +1552,186 @@ describe("unsubscribe (#1729)", () => {
         argv.join(" "),
       );
     }
+  });
+});
+
+const relationshipsNow = () =>
+  envelope({
+    relationships: [
+      {
+        id: ID(1),
+        group: ID(9),
+        added_at: "2026-10-01T00:00:00Z",
+        sender_written: {
+          name: "Acme",
+          domains: ["acme.com"],
+          addresses: [],
+        },
+      },
+    ],
+    suggestions: [
+      {
+        id: ID(2),
+        added_at: "2026-10-02T00:00:00Z",
+        sender_written: {
+          name: "Globex",
+          domains: ["globex.com"],
+          addresses: [],
+        },
+      },
+    ],
+    groups: [{ id: ID(9), name: "Investors", comes_back: true }],
+  });
+const done = () => envelope({ outcome: "done" });
+
+describe("relationships (#1729)", () => {
+  it("lists them with their groups, and who Brood suggests", async () => {
+    const s = await signedIn({
+      [api("list_relationships")]: [relationshipsNow],
+    });
+    assert.equal(await run(s.io, ["relationships"]), 0);
+    assert.ok(s.out[0]!.includes("Acme") && s.out[0]!.includes("Investors"));
+    assert.equal(s.out[1], "Brood suggests:");
+    assert.ok(s.out[2]!.includes("Globex"));
+  });
+
+  it("accepts a suggestion by its domain into a group", async () => {
+    const s = await signedIn({
+      [api("list_relationships")]: [relationshipsNow],
+      [api("accept_suggestion")]: [
+        () => envelope({ id: ID(2), outcome: "done", later: false }),
+      ],
+    });
+    assert.equal(
+      await run(s.io, [
+        "relationships",
+        "accept",
+        "globex.com",
+        "--group",
+        "Partners",
+      ]),
+      0,
+    );
+    assert.deepEqual(JSON.parse(s.sent.at(-1)!.body), {
+      relationship: ID(2),
+      group: "Partners",
+    });
+  });
+
+  it("removes one after a yes, saying what stops, and not on a no or with --check", async () => {
+    const yes = await signedIn({
+      [api("list_relationships")]: [relationshipsNow],
+      [api("remove_relationship")]: [done],
+    });
+    const asked: string[] = [];
+    yes.io.ask = async (q) => (asked.push(q), "y");
+    assert.equal(await run(yes.io, ["relationships", "remove", "Acme"]), 0);
+    assert.deepEqual(asked, ["Remove Acme? [y/N] "]);
+    assert.ok(yes.out.some((l) => l.includes("stays filed")));
+    assert.deepEqual(JSON.parse(yes.sent.at(-1)!.body), {
+      relationship: ID(1),
+    });
+    for (const [argv, ask] of [
+      [["relationships", "remove", "Acme"], async () => "n"],
+      [["relationships", "remove", "Acme", "--check"], async () => "y"],
+      [["relationships", "remove", "Acme"], null],
+    ] as const) {
+      const s = await signedIn({
+        [api("list_relationships")]: [relationshipsNow],
+      });
+      s.io.ask = ask;
+      await run(s.io, [...argv]);
+      assert.ok(
+        !s.sent.some((x) => x.url.endsWith("remove_relationship")),
+        argv.join(" "),
+      );
+    }
+  });
+
+  it("prints only the answer with --json --check", async () => {
+    const s = await signedIn({
+      [api("list_relationships")]: [relationshipsNow],
+    });
+    await run(s.io, ["--json", "relationships", "remove", "Acme", "--check"]);
+    assert.ok(JSON.parse(s.out.join("\n")).data.relationships);
+  });
+
+  it("refuses a move with no group, someone not listed, and a suggestion to remove", async () => {
+    for (const argv of [
+      ["relationships", "move", "Acme"],
+      ["relationships", "move", "Nobody", "--group", "Investors"],
+      ["relationships", "remove", "Globex", "--yes"],
+      ["relationships", "dismiss", "Acme"],
+    ]) {
+      const s = await signedIn({
+        [api("list_relationships")]: [relationshipsNow],
+      });
+      assert.equal(await run(s.io, argv), 1, argv.join(" "));
+      assert.equal(
+        s.sent.filter((x) => !x.url.endsWith("list_relationships")).length,
+        0,
+        argv.join(" "),
+      );
+    }
+  });
+});
+
+describe("groups (#1729)", () => {
+  it("lists them, and adds one", async () => {
+    const s = await signedIn({
+      [api("list_relationships")]: [relationshipsNow],
+      [api("add_group")]: [() => envelope({ outcome: "taken" })],
+    });
+    assert.equal(await run(s.io, ["groups"]), 0);
+    assert.ok(s.out[0]!.includes("comes back"));
+    assert.equal(await run(s.io, ["groups", "add", "Investors"]), 0);
+    assert.equal(s.out.at(-1), "Another of your groups has that name.");
+  });
+
+  it("finds a group by its name in any case, for each change", async () => {
+    const cases: [string[], string, Record<string, unknown>][] = [
+      [
+        ["groups", "rename", "investors", "Backers"],
+        "rename_group",
+        { group: ID(9), name: "Backers" },
+      ],
+      [
+        ["groups", "comes-back", "investors", "off"],
+        "set_group_comes_back",
+        { group: ID(9), comes_back: false },
+      ],
+      [["groups", "remove", "investors"], "remove_group", { group: ID(9) }],
+    ];
+    for (const [argv, operation, body] of cases) {
+      const s = await signedIn({
+        [api("list_relationships")]: [relationshipsNow],
+        [api(operation)]: [done],
+      });
+      assert.equal(await run(s.io, argv), 0, argv.join(" "));
+      assert.deepEqual(JSON.parse(s.sent.at(-1)!.body), body);
+    }
+  });
+
+  it("refuses a group it cannot find and a setting that is neither on nor off", async () => {
+    for (const argv of [
+      ["groups", "remove", "Nobody"],
+      ["groups", "comes-back", "Investors", "maybe"],
+      ["groups", "archive", "Investors"],
+    ]) {
+      const s = await signedIn({
+        [api("list_relationships")]: [relationshipsNow],
+      });
+      assert.equal(await run(s.io, argv), 1, argv.join(" "));
+    }
+  });
+});
+
+describe("proposals file, more than one request takes", () => {
+  it("refuses before asking", async () => {
+    const s = await signedIn({});
+    const ids = Array.from({ length: 51 }, (_, i) => ID(i + 1));
+    assert.equal(await run(s.io, ["proposals", "file", ...ids]), 1);
+    assert.equal(s.sent.length, 0);
   });
 });
 

@@ -4,7 +4,9 @@ import type {
   ClassificationReason,
   ClassificationState,
   RelationshipOutcome,
+  GroupOutcome,
   ReproposeOutcome,
+  SuggestionOutcome,
   UnsubscribeOutcome,
   DIRECTIONS,
   KeepOutcome,
@@ -64,6 +66,15 @@ export type Arguments = {
   list_quiet_senders: OwnerArgument & PageArguments;
   list_rules: OwnerArgument & PageArguments & { classification?: string };
   get_rule: OwnerArgument & { id: string };
+  list_relationships: OwnerArgument;
+  accept_suggestion: OwnerArgument & { relationship: string; group: string };
+  dismiss_suggestion: OwnerArgument & { relationship: string };
+  move_relationship: OwnerArgument & { relationship: string; group: string };
+  remove_relationship: OwnerArgument & { relationship: string };
+  add_group: OwnerArgument & { name: string };
+  rename_group: OwnerArgument & { group: string; name: string };
+  set_group_comes_back: OwnerArgument & { group: string; comes_back: boolean };
+  remove_group: OwnerArgument & { group: string };
   end_session: { refresh_token: string };
   list_kept: OwnerArgument & PageArguments;
   hush: OwnerArgument &
@@ -456,7 +467,52 @@ export type Answers = {
   choose_unsubscribes: ChooseUnsubscribes;
   keep: Keep;
   add_relationships: AddRelationships;
+  list_relationships: ListRelationships;
+  accept_suggestion: AcceptSuggestion;
+  dismiss_suggestion: DismissSuggestion;
+  move_relationship: GroupChanged;
+  remove_relationship: GroupChanged;
+  add_group: GroupChanged;
+  rename_group: GroupChanged;
+  set_group_comes_back: GroupChanged;
+  remove_group: GroupChanged;
 };
+
+/** Who a relationship or a suggestion covers. Its name may be a sender's domain. */
+type RelationshipWritten = {
+  name: string;
+  domains: string[];
+  addresses: string[];
+};
+
+/** A person's relationships, the groups they are in, and who Brood suggests. */
+export type ListRelationships = {
+  relationships: {
+    id: string;
+    /** The group it is in, by id in `groups`; null where it is in none. */
+    group: string | null;
+    added_at: string;
+    sender_written: RelationshipWritten;
+  }[];
+  suggestions: {
+    id: string;
+    added_at: string;
+    sender_written: RelationshipWritten;
+  }[];
+  groups: { id: string; name: string; comes_back: boolean }[];
+};
+
+/** A suggestion taken up, and whether Brood has yet to run over it. */
+export type AcceptSuggestion = {
+  id: string;
+  outcome: SuggestionOutcome;
+  later: boolean;
+};
+
+export type DismissSuggestion = { id: string; outcome: SuggestionOutcome };
+
+/** What came of changing a group or a relationship's place. */
+export type GroupChanged = { outcome: GroupOutcome };
 
 /** The codes a problem carries, which clients branch on (DD21 §8, RFC 9457). */
 export const PROBLEM_CODES = [

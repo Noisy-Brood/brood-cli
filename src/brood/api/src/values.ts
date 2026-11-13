@@ -106,6 +106,18 @@ export const RELATIONSHIP_OUTCOMES = [
 ] as const;
 export type RelationshipOutcome = (typeof RELATIONSHIP_OUTCOMES)[number];
 
+/** What came of changing a group or a relationship's place in one. */
+export const GROUP_OUTCOMES = ["done", "taken", "not_empty"] as const;
+export type GroupOutcome = (typeof GROUP_OUTCOMES)[number];
+
+/** What taking someone off the relationships list does, wherever it is said. */
+export const RELATIONSHIP_REMOVAL =
+  "Anything already filed stays filed, and a proposal waiting for them is withdrawn. Brood may then quiet them, will not bring them back after a quiet spell, and will not suggest them again.";
+
+/** What came of taking up or dismissing a suggestion. */
+export const SUGGESTION_OUTCOMES = ["done", "not_suggested"] as const;
+export type SuggestionOutcome = (typeof SUGGESTION_OUTCOMES)[number];
+
 /** What came of asking for a declined classification to be proposed again. */
 export const REPROPOSE_OUTCOMES = [
   "reproposed",
