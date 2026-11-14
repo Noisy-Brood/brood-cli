@@ -304,3 +304,14 @@ export const listed = (values: readonly string[]) =>
         .slice(0, -1)
         .map((v) => `\`${v}\``)
         .join(", ")} or \`${values.at(-1)}\``;
+
+/** How often a person wants the letter of what Brood did, if at all (#609). */
+export const LETTER_CHOICES = ["off", "month", "week"] as const;
+export type LetterChoice = (typeof LETTER_CHOICES)[number];
+
+/**
+ * What came of choosing whether the first proposals' email is wanted:
+ * recorded, or sent already, so there was nothing left to change.
+ */
+export const FIRST_PROPOSALS_OUTCOMES = ["recorded", "sent"] as const;
+export type FirstProposalsOutcome = (typeof FIRST_PROPOSALS_OUTCOMES)[number];

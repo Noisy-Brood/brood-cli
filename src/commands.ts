@@ -16,6 +16,9 @@ import {
   type ThresholdName,
   type AdoptOutcome,
   type AdoptRefusalWord,
+  type LetterChoice,
+  type OwnRuleDoesWord,
+  LETTER_CHOICES,
 } from "./brood/api/src/client.ts";
 import {
   API_PAGE_MAX,
@@ -1505,6 +1508,15 @@ const CANNOT_ADOPT: Record<AdoptRefusalWord, string> = {
   several_homes: "it files under several homes",
 };
 
+const DOES: Record<OwnRuleDoesWord, string> = {
+  out_of_inbox: "out of the inbox",
+  trash: "to the trash",
+  read: "marked read",
+  starred: "starred",
+  important: "marked important",
+  forwards: "forwarded",
+};
+
 const isAdoptRefusal = (o: AdoptOutcome): o is AdoptRefusalWord =>
   (ADOPT_REFUSALS as readonly string[]).includes(o);
 
@@ -1547,6 +1559,7 @@ const ownRules: Run = async (io, style, options, args) => {
             "",
             clean(f.sender.value),
             clean(f.under.join(", ")),
+            f.does.map((d) => DOES[d]).join(", "),
             f.cannot_adopt ? CANNOT_ADOPT[f.cannot_adopt] : "can be taken over",
             dim(style, f.id),
           ]),
@@ -1824,6 +1837,103 @@ const ruleBook: Run = async (io, style, options, args) => {
   );
 };
 
+const LETTER_SAID: Record<LetterChoice, string> = {
+  off: "no letter",
+  month: "a letter each month",
+  week: "a letter each week",
+};
+
+/** An hour of the day as a person reads one, as 08:00. */
+const clock = (h: number) => `${String(h).padStart(2, "0")}:00`;
+
+/** `brood preferences`, and choosing the letter, the first proposals' email or the hours. */
+const preferences: Run = async (io, style, options, args) => {
+  if (options.owner !== undefined)
+    throw new Refusal(
+      "brood preferences is your own account's alone: --owner does not apply.",
+    );
+  const [verb, ...rest] = args;
+  if (verb === undefined)
+    return shown(io, style, await call(io, "get_preferences", {}), (p) => {
+      rows(io, [
+        ["Letter", LETTER_SAID[p.letter]],
+        [
+          "First proposals",
+          p.first_proposals.sent
+            ? "the email has gone"
+            : p.first_proposals.wanted
+              ? "an email when they are ready"
+              : "no email",
+        ],
+        [
+          "Arrival hours",
+          p.arrival_hours
+            ? p.arrival_hours.hours.map(clock).join(" and ")
+            : "not set",
+        ],
+      ]);
+    });
+  if (verb === "letter") {
+    const choice = LETTER_CHOICES.find((c) => c === one(rest, "letter"));
+    if (!choice)
+      throw new Refusal(
+        `brood preferences letter takes ${LETTER_CHOICES.join(", ")}.`,
+      );
+    return shown(
+      io,
+      style,
+      await call(io, "set_letter", { letter: choice }),
+      (l) => io.out(`From now on, ${LETTER_SAID[l.letter]}.`),
+    );
+  }
+  if (verb === "first-proposals") {
+    const setting = one(rest, "setting, on or off");
+    if (setting !== "on" && setting !== "off")
+      throw new Refusal("brood preferences first-proposals takes on or off.");
+    return shown(
+      io,
+      style,
+      await call(io, "set_first_proposals", { wanted: setting === "on" }),
+      (f) =>
+        io.out(
+          f.outcome === "sent"
+            ? "The email has gone already, so nothing changed."
+            : setting === "on"
+              ? "Brood emails you once when your first proposals are ready."
+              : "No email when your first proposals are ready.",
+        ),
+    );
+  }
+  if (verb === "hours") {
+    if (
+      !rest.length ||
+      rest.length > 2 ||
+      !rest.every((h) => /^\d{1,2}$/.test(h))
+    )
+      throw new Refusal(
+        "brood preferences hours takes one or two hours of the day, 0 to 23, as 8 17.",
+      );
+    // The machine's own offset now, as the account page takes the browser's.
+    // `|| 0`: UTC's offset negated is -0, which a body should not carry.
+    const offset = -new Date(io.now()).getTimezoneOffset() || 0;
+    return shown(
+      io,
+      style,
+      await call(io, "set_arrival_hours", {
+        hours: rest.map(Number),
+        utc_offset_minutes: offset,
+      }),
+      (h) =>
+        io.out(
+          `Batched mail comes back at ${h.hours.map(clock).join(" and ")}, your time.`,
+        ),
+    );
+  }
+  throw new Refusal(
+    `brood preferences takes letter, first-proposals or hours, not ${clean(verb)}.`,
+  );
+};
+
 /** Each command, and the options it takes, so one it does not is refused rather than ignored. */
 export const COMMANDS: Record<string, { run: Run; takes: OptionName[] }> = {
   accounts: { run: accounts, takes: [] },
@@ -1850,6 +1960,7 @@ export const COMMANDS: Record<string, { run: Run; takes: OptionName[] }> = {
   "own-rules": { run: ownRules, takes: ["yes"] },
   "keep-out": { run: keepOutCommand, takes: ["yes"] },
   "rule-book": { run: ruleBook, takes: ["check", "yes"] },
+  preferences: { run: preferences, takes: [] },
   proposals: { run: proposals, takes: ["all", "check", "yes"] },
   unsubscribe: { run: unsubscribeCommand, takes: ["all", "check", "yes"] },
 };

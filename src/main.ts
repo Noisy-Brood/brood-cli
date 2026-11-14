@@ -84,6 +84,12 @@ Relationships, whose mail Brood gives a home of its own
                                     whether they return after a quiet spell
   brood groups remove <name>        remove one with nobody in it
 
+Your account
+  brood preferences                 the letter, the first proposals' email and your arrival hours
+  brood preferences letter off|month|week
+  brood preferences first-proposals on|off
+  brood preferences hours <h> [<h>] when batched mail comes back, in this machine's time
+
 Accounts and session
   brood accounts                    your mailboxes, and whether Brood can read them
   brood login [--read-only]         sign in, by a code you approve in a browser

@@ -10,6 +10,8 @@ import type {
   OwnRuleDoesWord,
   RestoreOutcome,
   RuleBookOutcome,
+  FirstProposalsOutcome,
+  LetterChoice,
   ThresholdName,
   Thresholds,
   ClassificationReason,
@@ -98,6 +100,10 @@ export type Arguments = {
       { check: true } | { check?: false; in_force: Thresholds }
     );
   reset_rule_book: OwnerArgument;
+  get_preferences: Record<string, never>;
+  set_letter: { letter: LetterChoice };
+  set_first_proposals: { wanted: boolean };
+  set_arrival_hours: { hours: number[]; utc_offset_minutes: number };
   end_session: { refresh_token: string };
   list_kept: OwnerArgument & PageArguments;
   hush: OwnerArgument &
@@ -509,6 +515,18 @@ export type Answers = {
   get_rule_book: RuleBook;
   set_rule_book: SetRuleBook;
   reset_rule_book: { outcome: RuleBookOutcome };
+  get_preferences: Preferences;
+  set_letter: { letter: LetterChoice };
+  set_first_proposals: { outcome: FirstProposalsOutcome };
+  set_arrival_hours: { hours: number[]; utc_offset_minutes: number };
+};
+
+/** Your own account's settings. */
+export type Preferences = {
+  letter: LetterChoice;
+  first_proposals: { wanted: boolean; sent: boolean };
+  /** Null until hours are set. */
+  arrival_hours: { hours: number[]; utc_offset_minutes: number } | null;
 };
 
 /**

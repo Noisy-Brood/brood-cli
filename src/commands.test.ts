@@ -1883,13 +1883,13 @@ describe("your own filters (#1729)", () => {
       ],
     });
 
-  it("lists each mailbox's filters, cleaned, with why one cannot be taken over", async () => {
+  it("lists each mailbox's filters, cleaned, with what each does and why one cannot be taken over", async () => {
     const s = await signedIn({ [api("list_own_rules")]: [listed] });
     assert.equal(await run(s.io, ["own-rules"]), 0);
     assert.deepEqual(s.out, [
       "me@work.test",
-      "  news[2J.test    Reading  can be taken over            F1",
-      "  boss@work.test  Boss     it leaves mail in the inbox  F2",
+      "  news[2J.test    Reading  out of the inbox  can be taken over            F1",
+      "  boss@work.test  Boss     starred           it leaves mail in the inbox  F2",
       "  One more names no one sender.",
       "  SaneBox left @SaneLater.",
       "me@home.test",
@@ -2097,5 +2097,66 @@ describe("the rule book (#1729)", () => {
     );
     assert.equal(await run(s.io, ["rule-book", "reset", "--yes"]), 0);
     assert.equal(s.sent.at(-1)!.url, api("reset_rule_book"));
+  });
+});
+
+describe("preferences (#1729)", () => {
+  it("shows the account's settings, and sets each", async () => {
+    const s = await signedIn({
+      [api("get_preferences")]: [
+        () =>
+          envelope({
+            letter: "month",
+            first_proposals: { wanted: true, sent: false },
+            arrival_hours: { hours: [8, 17], utc_offset_minutes: -300 },
+          }),
+      ],
+      [api("set_letter")]: [() => envelope({ letter: "week" })],
+      [api("set_first_proposals")]: [() => envelope({ outcome: "sent" })],
+      [api("set_arrival_hours")]: [
+        () => envelope({ hours: [7], utc_offset_minutes: 60 }),
+      ],
+    });
+    assert.equal(await run(s.io, ["preferences"]), 0);
+    assert.deepEqual(s.out, [
+      "Letter           a letter each month",
+      "First proposals  an email when they are ready",
+      "Arrival hours    08:00 and 17:00",
+    ]);
+    assert.equal(await run(s.io, ["preferences", "letter", "week"]), 0);
+    assert.deepEqual(JSON.parse(s.sent.at(-1)!.body), { letter: "week" });
+    assert.equal(await run(s.io, ["preferences", "first-proposals", "off"]), 0);
+    assert.deepEqual(JSON.parse(s.sent.at(-1)!.body), { wanted: false });
+    assert.equal(
+      s.out.at(-1),
+      "The email has gone already, so nothing changed.",
+    );
+    // Five hours behind UTC, as the machine says it: minutes east is -300.
+    const offset = Date.prototype.getTimezoneOffset;
+    Date.prototype.getTimezoneOffset = () => 300;
+    try {
+      assert.equal(await run(s.io, ["preferences", "hours", "7"]), 0);
+    } finally {
+      Date.prototype.getTimezoneOffset = offset;
+    }
+    assert.deepEqual(JSON.parse(s.sent.at(-1)!.body), {
+      hours: [7],
+      utc_offset_minutes: -300,
+    });
+  });
+
+  it("refuses another's account, a choice it lacks and an hour that is none, before calling", async () => {
+    const s = await signedIn({});
+    for (const argv of [
+      ["preferences", "--owner", "user_2"],
+      ["preferences", "letter", "daily"],
+      ["preferences", "first-proposals", "yes"],
+      ["preferences", "hours"],
+      ["preferences", "hours", "8", "12", "17"],
+      ["preferences", "hours", "8am"],
+      ["preferences", "timezone"],
+    ])
+      assert.equal(await run(s.io, argv), 1, argv.join(" "));
+    assert.equal(s.sent.length, 0);
   });
 });
