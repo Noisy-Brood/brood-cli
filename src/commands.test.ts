@@ -1871,7 +1871,7 @@ describe("your own filters (#1729)", () => {
                 id: "F2",
                 sender: { kind: "address", value: "boss@work.test" },
                 under: ["Boss"],
-                does: ["starred"],
+                does: [],
                 cannot_adopt: "keeps_in_inbox",
               },
             ],
@@ -1883,13 +1883,13 @@ describe("your own filters (#1729)", () => {
       ],
     });
 
-  it("lists each mailbox's filters, cleaned, with what each does and why one cannot be taken over", async () => {
+  it("lists each mailbox's filters, cleaned, with what each does, a filter that only files included, and why one cannot be taken over", async () => {
     const s = await signedIn({ [api("list_own_rules")]: [listed] });
     assert.equal(await run(s.io, ["own-rules"]), 0);
     assert.deepEqual(s.out, [
       "me@work.test",
-      "  news[2J.test    Reading  out of the inbox  can be taken over            F1",
-      "  boss@work.test  Boss     starred           it leaves mail in the inbox  F2",
+      "  news[2J.test    Reading  out of the inbox   can be taken over            F1",
+      "  boss@work.test  Boss     left in the inbox  it leaves mail in the inbox  F2",
       "  One more names no one sender.",
       "  SaneBox left @SaneLater.",
       "me@home.test",
@@ -2158,5 +2158,248 @@ describe("preferences (#1729)", () => {
     ])
       assert.equal(await run(s.io, argv), 1, argv.join(" "));
     assert.equal(s.sent.length, 0);
+  });
+});
+
+describe("changes approved in the app (#1729)", () => {
+  const asked = (id: number) =>
+    envelope({
+      request: ID(id),
+      approve_at: `https://app.example.test/account/approve/${ID(id)}`,
+      expires_at: "2026-10-18T09:10:00Z",
+    });
+  const standing = (
+    id: number,
+    operation: string,
+    state: string,
+    outcome: string | null = null,
+  ) =>
+    envelope({
+      request: ID(id),
+      operation,
+      state,
+      expires_at: "2026-10-18T09:10:00Z",
+      outcome,
+    });
+  const kept = (rows: { kind: string; value: string }[]) =>
+    envelope({
+      kept: rows.map((r) => ({
+        ...r,
+        added_at: "2026-10-01T00:00:00Z",
+        last_wrote: null,
+      })),
+      seeds: [{ kind: "domain", value: "accounts.google.com", why: "sign-in" }],
+    });
+
+  it("asks to disconnect a mailbox by its address, waits for the approval, and says what came of it", async () => {
+    const s = await signedIn({
+      [api("list_accounts")]: [
+        () =>
+          envelope({
+            accounts: [{ id: ID(7), address: "me@acme.test", connected: true }],
+          }),
+      ],
+      [api("disconnect_mailbox")]: [() => asked(1)],
+      [api("get_request")]: [
+        () => standing(1, "disconnect_mailbox", "waiting"),
+        () => standing(1, "disconnect_mailbox", "approved", "disconnecting"),
+      ],
+    });
+    assert.equal(
+      await run(s.io, ["accounts", "disconnect", "Me@acme.test"]),
+      0,
+    );
+    assert.deepEqual(JSON.parse(s.sent[1]!.body), { account: ID(7) });
+    assert.ok(
+      s.err.includes(
+        `To disconnect me@acme.test, approve it in Brood: https://app.example.test/account/approve/${ID(1)}`,
+      ),
+    );
+    assert.deepEqual(JSON.parse(s.sent.at(-1)!.body), { request: ID(1) });
+    assert.deepEqual(s.out, [
+      "Approved. Brood has stopped syncing the mailbox, and is letting it go.",
+    ]);
+    assert.deepEqual(s.slept, [2000, 2000]);
+  });
+
+  it("says a declined request and one that lapsed changed nothing", async () => {
+    for (const [state, said] of [
+      ["declined", "Declined. Nothing changed."],
+      ["expired", "Nobody approved it in time. Nothing changed."],
+    ] as const) {
+      const s = await signedIn({
+        [api("list_programs")]: [
+          () =>
+            envelope({
+              programs: [
+                {
+                  client: "client_other",
+                  name: "Other",
+                  this_program: false,
+                  last_used_at: "2026-10-17T00:00:00Z",
+                  revoked_at: null,
+                  revoked_why: null,
+                },
+              ],
+            }),
+        ],
+        [api("revoke_program")]: [() => asked(2)],
+        [api("get_request")]: [() => standing(2, "revoke_program", state)],
+      });
+      assert.equal(await run(s.io, ["programs", "revoke", "other"]), 0);
+      assert.deepEqual(JSON.parse(s.sent[1]!.body), { client: "client_other" });
+      assert.deepEqual(s.out, [said], state);
+    }
+  });
+
+  it("stops waiting once the request's time is up, assuming nothing", async () => {
+    const s = await signedIn({
+      [api("list_programs")]: [
+        () =>
+          envelope({
+            programs: [
+              {
+                client: "client_other",
+                name: null,
+                this_program: false,
+                last_used_at: "2026-10-17T00:00:00Z",
+                revoked_at: "2026-10-17T00:00:00Z",
+                revoked_why: "person",
+              },
+            ],
+          }),
+      ],
+      [api("allow_program")]: [() => asked(3)],
+      [api("get_request")]: Array.from(
+        { length: 400 },
+        () => () => standing(3, "allow_program", "waiting"),
+      ),
+    });
+    assert.equal(await run(s.io, ["programs", "allow", "client_other"]), 1);
+    assert.ok(s.err.some((l) => l.includes("Nothing was assumed")));
+    assert.ok(s.slept.length < 400);
+  });
+
+  it("finds an entry on the never-quiet list by its value, on every page, and names its kind", async () => {
+    const s = await signedIn({
+      // The second page holds it, the first answered below: a lookup reads every one.
+      [api("list_kept")]: [
+        () => kept([{ kind: "address", value: "a@b.test" }]),
+      ],
+      [api("remove_never_quiet")]: [() => asked(4)],
+      [api("get_request")]: [
+        () => standing(4, "remove_never_quiet", "approved", "removed"),
+      ],
+    });
+    s.io.fetch = ((inner) => async (url, init) => {
+      if (url === api("list_kept") && !String(init.body).includes("cursor"))
+        return envelope({ kept: [], seeds: [] }, { next: "page-2" });
+      return inner(url, init);
+    })(s.io.fetch);
+    assert.equal(await run(s.io, ["keep", "remove", "A@b.test"]), 0);
+    const body = s.sent.find((x) => x.url === api("remove_never_quiet"))!.body;
+    assert.deepEqual(JSON.parse(body), { kind: "address", value: "a@b.test" });
+    assert.deepEqual(s.out, ["Approved. It is off your never-quiet list."]);
+  });
+
+  it("refuses, before asking, what is not the person's own to change", async () => {
+    const s = await signedIn({
+      [api("list_kept")]: [
+        () => kept([]),
+        () =>
+          kept([
+            { kind: "address", value: "x@y.test" },
+            { kind: "copied", value: "x@y.test" },
+          ]),
+      ],
+      [api("list_accounts")]: [
+        () =>
+          envelope({
+            accounts: [
+              { id: ID(8), address: "old@acme.test", connected: false },
+            ],
+          }),
+        () => envelope({ accounts: [] }),
+      ],
+      [api("list_programs")]: [
+        () => envelope({ programs: [] }),
+        () =>
+          envelope({
+            programs: [
+              {
+                client: "P029s9c7VAQInceB",
+                name: "Brood CLI",
+                this_program: true,
+                last_used_at: "2026-10-18T08:00:00Z",
+                revoked_at: null,
+                revoked_why: null,
+              },
+            ],
+          }),
+      ],
+    });
+    for (const argv of [
+      ["keep", "remove", "accounts.google.com"],
+      ["keep", "remove", "x@y.test"],
+      ["accounts", "disconnect", "old@acme.test"],
+      ["accounts", "disconnect", "nobody@acme.test"],
+      ["programs", "revoke", "nothing"],
+      ["programs", "revoke", "brood cli"],
+      ["programs", "--owner", "user_2"],
+      ["keep", "remove", "x@y.test", "--owner", "user_2"],
+      ["accounts", "disconnect", "a", "--owner", "user_2"],
+      ["keep", "remove", "x@y.test", "sometimes"],
+      ["programs", "forget", "x"],
+    ])
+      assert.equal(await run(s.io, argv), 1, argv.join(" "));
+    assert.ok(
+      s.err.some((l) =>
+        l.includes("Brood keeps accounts.google.com in view for everyone"),
+      ),
+    );
+    assert.ok(
+      s.err.some((l) => l.includes("brood keep remove x@y.test address")),
+    );
+    assert.ok(s.err.some((l) => l.includes("This is the program asking")));
+    for (const op of [
+      "remove_never_quiet",
+      "disconnect_mailbox",
+      "allow_program",
+      "revoke_program",
+    ])
+      assert.ok(!s.sent.some((x) => x.url === api(op)), op);
+  });
+
+  it("lists the programs, saying which one this is", async () => {
+    const s = await signedIn({
+      [api("list_programs")]: [
+        () =>
+          envelope({
+            programs: [
+              {
+                client: "P029s9c7VAQInceB",
+                name: "Brood CLI",
+                this_program: true,
+                last_used_at: "2026-10-18T08:00:00Z",
+                revoked_at: null,
+                revoked_why: null,
+              },
+              {
+                client: "client_other",
+                name: null,
+                this_program: false,
+                last_used_at: "2026-09-01T00:00:00Z",
+                revoked_at: "2026-10-01T00:00:00Z",
+                revoked_why: "unused",
+              },
+            ],
+          }),
+      ],
+    });
+    assert.equal(await run(s.io, ["programs"]), 0);
+    assert.deepEqual(s.out, [
+      "Brood CLI     last used 2026-10-18        this one  P029s9c7VAQInceB",
+      "client_other  revoked 2026-10-01, unused            client_other",
+    ]);
   });
 });

@@ -14,7 +14,9 @@ import { depthOf, wrenIn } from "./wren.ts";
  * `unhush`, `keep-out`, `rules file`, `batch`, `quieted restore`, `own-rules
  * adopt`, `proposals file`, `unsubscribe` and `keep add`, which changes
  * Brood's filters to keep mail in view; `own-rules` reads the mailbox's own
- * filters. `relationships add` changes what Brood proposes, never the
+ * filters. `accounts disconnect`, `keep remove` and `programs allow` and
+ * `revoke` ask for a change the person approves in the app, and change
+ * nothing until they do (DD21 §4). `relationships add` changes what Brood proposes, never the
  * mailbox, and the rule book what Brood decides on its next run, which can
  * quiet a home or stop filing one. Bare `brood` prints this help, never a report (DD10 §3), so it is
  * never a status glanced at, under the wren.
@@ -66,6 +68,8 @@ Unsubscribing, which cannot be taken back
 Keeping in view, which changes Brood's filters so it never files these senders
   brood keep                        your never-quiet list
   brood keep add [<file>]           add addresses and domains, one a line, from a file or standard input
+  brood keep remove <entry> [<kind>]
+                                    take one off the list, once you approve it in the app
 
 Relationships, whose mail Brood gives a home of its own
   brood relationships               who is on the list, and who Brood suggests
@@ -89,9 +93,14 @@ Your account
   brood preferences letter off|month|week
   brood preferences first-proposals on|off
   brood preferences hours <h> [<h>] when batched mail comes back, in this machine's time
+  brood programs                    the programs you allow to call Brood for you
+  brood programs allow|revoke <name>
+                                    allow one again, or revoke it, once you approve it in the app
 
 Accounts and session
   brood accounts                    your mailboxes, and whether Brood can read them
+  brood accounts disconnect <mailbox>
+                                    let one go, once you approve it in the app
   brood login [--read-only]         sign in, by a code you approve in a browser
   brood logout                      end this session
   brood version

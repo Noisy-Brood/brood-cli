@@ -18,11 +18,18 @@ import {
   type AdoptRefusalWord,
   type LetterChoice,
   type OwnRuleDoesWord,
+  type ApprovedInApp,
+  type Arguments,
+  type KeptKind,
+  KEPT_KINDS,
+  APPROVAL_SAID,
+  REQUEST_SAID,
   LETTER_CHOICES,
 } from "./brood/api/src/client.ts";
 import {
   API_PAGE_MAX,
   API_STRETCH_DAYS,
+  APPROVAL_MINUTES,
   PORTRAIT_DAYS,
   PROPOSALS_AT_ONCE,
 } from "./brood/figures/index.ts";
@@ -260,6 +267,8 @@ async function chosen(
 }
 
 const accounts: Run = async (io, style, options, args) => {
+  const [verb, ...rest] = args;
+  if (verb === "disconnect") return disconnect(io, style, options, rest);
   none(args);
   const answer = await call(io, "list_accounts", owner(options));
   shown(io, style, answer, (data) => {
@@ -274,6 +283,27 @@ const accounts: Run = async (io, style, options, args) => {
       ]),
     );
   });
+};
+
+/** `brood accounts disconnect`: a mailbox, by its address or id, let go once approved in the app. */
+const disconnect: Run = async (io, style, options, args) => {
+  ownAlone(options, "brood accounts disconnect");
+  const name = one(args, "mailbox, by its address or id");
+  const { accounts: mailboxes } = (await call(io, "list_accounts", {})).data;
+  const mailbox = mailboxes.find((a) => a.id === name || same(a.address, name));
+  if (!mailbox)
+    throw new Refusal(
+      `No mailbox of yours is ${clean(name)}: brood accounts lists them.`,
+    );
+  if (!mailbox.connected)
+    throw new Refusal(`${mailbox.address} is already disconnected.`);
+  return approvedInApp(
+    io,
+    style,
+    "disconnect_mailbox",
+    { account: mailbox.id },
+    `disconnect ${mailbox.address}`,
+  );
 };
 
 const week: Run = async (io, style, options, args) => {
@@ -1343,8 +1373,11 @@ const relationships: Run = async (io, style, options, args) => {
 const keep: Run = async (io, style, options, args) => {
   const [verb, ...rest] = args;
   if (verb === "add") return paste(io, style, options, rest, KEEP);
+  if (verb === "remove") return unkeep(io, style, options, rest);
   if (verb !== undefined)
-    throw new Refusal(`brood keep takes add, or nothing: not ${clean(verb)}.`);
+    throw new Refusal(
+      `brood keep takes add or remove, or nothing: not ${clean(verb)}.`,
+    );
   without(options, ["check", "yes"], "brood keep");
   const answer = await call(io, "list_kept", {
     ...owner(options),
@@ -1368,6 +1401,60 @@ const keep: Run = async (io, style, options, args) => {
       data.seeds.map((s) => [s.value, dim(style, s.why)]),
     );
   });
+};
+
+/**
+ * `brood keep remove`: an entry of the person's own off the never-quiet
+ * list, found on every page of it, once approved in the app. One kept for
+ * everyone is not theirs to remove, and is said so.
+ */
+const unkeep: Run = async (io, style, options, args) => {
+  ownAlone(options, "brood keep remove");
+  without(options, ["check", "yes", "limit", "cursor"], "brood keep remove");
+  const [value, kind, ...extra] = args;
+  if (value === undefined || extra.length)
+    throw new Refusal(
+      "Name one address or domain on your list, and its kind if it is there twice.",
+    );
+  if (kind !== undefined && !KEPT_KINDS.some((k) => k === kind))
+    throw new Refusal(
+      `brood keep remove takes a kind of ${KEPT_KINDS.join(", ")}, not ${clean(kind)}.`,
+    );
+  const found: { kind: KeptKind; value: string }[] = [];
+  let seeded = false;
+  let cursor: string | undefined;
+  for (let pages = 0; ; pages++) {
+    if (pages === LOOKUP_PAGES) throw tooMany(value);
+    const { data, next } = await call(io, "list_kept", {
+      ...(cursor ? { cursor } : {}),
+    });
+    found.push(
+      ...data.kept.filter(
+        (k) => same(k.value, value) && (kind === undefined || k.kind === kind),
+      ),
+    );
+    seeded ||= data.seeds.some((k) => same(k.value, value));
+    if (!next) break;
+    cursor = next;
+  }
+  const [only, ...others] = found;
+  if (!only)
+    throw new Refusal(
+      seeded
+        ? `Brood keeps ${clean(value)} in view for everyone, so it is not yours to remove.`
+        : `${clean(value)} is not on your never-quiet list: brood keep lists it.`,
+    );
+  if (others.length)
+    throw new Refusal(
+      `${clean(value)} is on your list more than once, as ${found.map((k) => k.kind).join(" and ")}. Name the one you mean, as brood keep remove ${clean(value)} ${only.kind}.`,
+    );
+  return approvedInApp(
+    io,
+    style,
+    "remove_never_quiet",
+    { kind: only.kind, value: only.value },
+    `take ${only.value} off your never-quiet list`,
+  );
 };
 
 /**
@@ -1559,7 +1646,10 @@ const ownRules: Run = async (io, style, options, args) => {
             "",
             clean(f.sender.value),
             clean(f.under.join(", ")),
-            f.does.map((d) => DOES[d]).join(", "),
+            // A filter that only files under a home leaves its mail where it was.
+            f.does.length
+              ? f.does.map((d) => DOES[d]).join(", ")
+              : "left in the inbox",
             f.cannot_adopt ? CANNOT_ADOPT[f.cannot_adopt] : "can be taken over",
             dim(style, f.id),
           ]),
@@ -1934,6 +2024,105 @@ const preferences: Run = async (io, style, options, args) => {
   );
 };
 
+/** How often a change waiting in the app is asked after. */
+const APPROVAL_POLL_MS = 2000;
+
+/** Refuses --owner on a command that is the person's own account alone. */
+const ownAlone = (options: Options, form: string) => {
+  if (options.owner !== undefined)
+    throw new Refusal(
+      `${form} is your own account's alone: --owner does not apply.`,
+    );
+};
+
+/**
+ * A change only the person makes, in the app (DD21 §4): asked for here,
+ * approved on the page it names, signed in as the app asks, and waited for,
+ * so the command ends saying what came of it. Nothing changes until then.
+ */
+async function approvedInApp<K extends ApprovedInApp>(
+  io: Io,
+  style: Style,
+  operation: K,
+  body: Arguments[K],
+  what: string,
+): Promise<void> {
+  const asked = await call(io, operation, body);
+  const { request, approve_at } = asked.data;
+  io.err(`To ${what}, approve it in Brood: ${approve_at}`);
+  io.err(
+    `Nothing changes unless you approve it there. Waiting up to ${APPROVAL_MINUTES} minutes.`,
+  );
+  // Bounded here as well as by the request's own end, so a clock that
+  // disagrees with Brood's cannot keep it waiting for good.
+  const polls = Math.ceil((APPROVAL_MINUTES * 60_000) / APPROVAL_POLL_MS) + 5;
+  for (let i = 0; i < polls; i++) {
+    await io.sleep(APPROVAL_POLL_MS);
+    const now = await call(io, "get_request", { request });
+    const { state, outcome } = now.data;
+    if (state === "waiting") continue;
+    const said =
+      state === "approved"
+        ? outcome
+          ? APPROVAL_SAID[outcome]
+          : REQUEST_SAID.under_way
+        : REQUEST_SAID[state];
+    return shown(io, style, now, () => io.out(said));
+  }
+  throw new Refusal("Brood never said what came of it. Nothing was assumed.");
+}
+
+/** `brood programs`, and allowing or revoking one, approved in the app. */
+const programs: Run = async (io, style, options, args) => {
+  ownAlone(options, "brood programs");
+  const [verb, ...rest] = args;
+  const listed = await call(io, "list_programs", {});
+  if (verb === undefined)
+    return shown(io, style, listed, (p) => {
+      if (!p.programs.length) return io.out("No program calls Brood for you.");
+      rows(
+        io,
+        p.programs.map((g) => [
+          g.name ?? g.client,
+          g.revoked_at
+            ? `revoked ${day(g.revoked_at)}${g.revoked_why === "unused" ? ", unused" : ""}`
+            : `last used ${day(g.last_used_at)}`,
+          g.this_program ? "this one" : "",
+          dim(style, g.client),
+        ]),
+      );
+    });
+  if (verb !== "allow" && verb !== "revoke")
+    throw new Refusal(
+      `brood programs takes allow or revoke, or nothing: not ${clean(verb)}.`,
+    );
+  const name = one(rest, "program, by its name or client id");
+  const found = listed.data.programs.filter(
+    (g) => g.client === name || same(g.name, name),
+  );
+  const [only, ...others] = found;
+  if (!only)
+    throw new Refusal(
+      `No program you allowed is ${clean(name)}: brood programs lists them.`,
+    );
+  if (others.length)
+    throw new Refusal(
+      `Several programs are called ${clean(name)}. Name the one you mean by its client id.`,
+    );
+  // Once revoked, this program could not ask what came of it.
+  if (verb === "revoke" && only.this_program)
+    throw new Refusal(
+      "This is the program asking. Revoke it on your account page, or run brood logout to end this session.",
+    );
+  return approvedInApp(
+    io,
+    style,
+    verb === "allow" ? "allow_program" : "revoke_program",
+    { client: only.client },
+    `${verb} ${only.name ?? only.client}`,
+  );
+};
+
 /** Each command, and the options it takes, so one it does not is refused rather than ignored. */
 export const COMMANDS: Record<string, { run: Run; takes: OptionName[] }> = {
   accounts: { run: accounts, takes: [] },
@@ -1961,6 +2150,7 @@ export const COMMANDS: Record<string, { run: Run; takes: OptionName[] }> = {
   "keep-out": { run: keepOutCommand, takes: ["yes"] },
   "rule-book": { run: ruleBook, takes: ["check", "yes"] },
   preferences: { run: preferences, takes: [] },
+  programs: { run: programs, takes: [] },
   proposals: { run: proposals, takes: ["all", "check", "yes"] },
   unsubscribe: { run: unsubscribeCommand, takes: ["all", "check", "yes"] },
 };

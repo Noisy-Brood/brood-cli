@@ -315,3 +315,70 @@ export type LetterChoice = (typeof LETTER_CHOICES)[number];
  */
 export const FIRST_PROPOSALS_OUTCOMES = ["recorded", "sent"] as const;
 export type FirstProposalsOutcome = (typeof FIRST_PROPOSALS_OUTCOMES)[number];
+
+/**
+ * The changes a person approves in the app, never a token alone (DD21 §4):
+ * the account's owner's, each asked by a program and made only when the
+ * person presses a button in Brood, signed in as the app asks.
+ */
+export const APPROVED_IN_APP = [
+  "disconnect_mailbox",
+  "remove_never_quiet",
+  "allow_program",
+  "revoke_program",
+] as const;
+export type ApprovedInApp = (typeof APPROVED_IN_APP)[number];
+
+/** Where a request to approve in the app stands. */
+export const REQUEST_STATES = [
+  "waiting",
+  "approved",
+  "declined",
+  "expired",
+] as const;
+export type RequestState = (typeof REQUEST_STATES)[number];
+
+/**
+ * What came of an approved request, as the app's own pages say it: a
+ * mailbox letting go or already let go, an entry removed or not on the list,
+ * a program allowed or revoked, or already so, or a change that failed.
+ */
+export const APPROVAL_OUTCOMES = [
+  "disconnecting",
+  "disconnected",
+  "removed",
+  "not_listed",
+  "allowed",
+  "already_allowed",
+  "revoked",
+  "already_revoked",
+  "reconnected",
+  "failed",
+] as const;
+export type ApprovalOutcome = (typeof APPROVAL_OUTCOMES)[number];
+
+/** What each outcome of an approved request is said as, in the app and at the command line. */
+export const APPROVAL_SAID: Record<ApprovalOutcome, string> = {
+  disconnecting:
+    "Approved. Brood has stopped syncing the mailbox, and is letting it go.",
+  disconnected: "Approved. That mailbox was already disconnected.",
+  removed: "Approved. It is off your never-quiet list.",
+  not_listed: "Approved. It was no longer on your never-quiet list.",
+  allowed: "Approved. The program is allowed again.",
+  already_allowed: "Approved. The program was already allowed.",
+  revoked: "Approved. The program is revoked.",
+  already_revoked: "Approved. The program was already revoked.",
+  reconnected:
+    "Approved, but the mailbox was connected again after this was asked for, so it stays connected. Ask again to let it go.",
+  failed: "Approved, but nothing was changed. Ask for it again.",
+};
+
+/**
+ * What a request is said as when it was not approved, or was approved and
+ * has yet to say what came of it, in the app and at the command line.
+ */
+export const REQUEST_SAID = {
+  declined: "Declined. Nothing changed.",
+  expired: "Nobody approved it in time. Nothing changed.",
+  under_way: "Approved, and under way.",
+} as const;

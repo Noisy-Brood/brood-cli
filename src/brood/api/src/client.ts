@@ -2,6 +2,10 @@ import { APP_ORIGIN } from "./origin.ts";
 import type {
   ADDRESSED,
   AdoptOutcome,
+  ApprovalOutcome,
+  ApprovedInApp,
+  KeptKind,
+  RequestState,
   AdoptRefusalWord,
   BatchOutcome,
   FileExistingOutcome,
@@ -23,7 +27,6 @@ import type {
   UnsubscribeOutcome,
   DIRECTIONS,
   KeepOutcome,
-  KeptKind,
   SenderScope,
   SenderTag,
   SHOWN,
@@ -105,6 +108,12 @@ export type Arguments = {
   set_first_proposals: { wanted: boolean };
   set_arrival_hours: { hours: number[]; utc_offset_minutes: number };
   end_session: { refresh_token: string };
+  list_programs: Record<string, never>;
+  disconnect_mailbox: { account: string };
+  remove_never_quiet: { kind: KeptKind; value: string };
+  allow_program: { client: string };
+  revoke_program: { client: string };
+  get_request: { request: string };
   list_kept: OwnerArgument & PageArguments;
   hush: OwnerArgument &
     (
@@ -519,6 +528,46 @@ export type Answers = {
   set_letter: { letter: LetterChoice };
   set_first_proposals: { outcome: FirstProposalsOutcome };
   set_arrival_hours: { hours: number[]; utc_offset_minutes: number };
+  list_programs: ListPrograms;
+  disconnect_mailbox: ApprovalAsked;
+  remove_never_quiet: ApprovalAsked;
+  allow_program: ApprovalAsked;
+  revoke_program: ApprovalAsked;
+  get_request: GetRequest;
+};
+
+/** The programs you allow to call the API for you, and those you revoked. */
+export type ListPrograms = {
+  programs: {
+    /** The program's OAuth client id, which `allow_program` and `revoke_program` take. */
+    client: string;
+    /** Its name, or null where the sign-in service has none. */
+    name: string | null;
+    /** Whether it is the program making this call. */
+    this_program: boolean;
+    last_used_at: string;
+    revoked_at: string | null;
+    revoked_why: "person" | "unused" | null;
+  }[];
+};
+
+/**
+ * A change asked for and not made (DD21 §4): it waits for you to approve it
+ * in the app, at `approve_at`, until `expires_at`.
+ */
+export type ApprovalAsked = {
+  request: string;
+  approve_at: string;
+  expires_at: string;
+};
+
+/** Where a request stands, and what came of it once approved. */
+export type GetRequest = {
+  request: string;
+  operation: ApprovedInApp;
+  state: RequestState;
+  expires_at: string;
+  outcome: ApprovalOutcome | null;
 };
 
 /** Your own account's settings. */
