@@ -25,7 +25,7 @@ signed in with that permission.
 It needs Node 24 or later.
 
 ```
-npm install --global @noisybrood/cli@0.3.0
+npm install --global @noisybrood/cli@0.4.0
 ```
 
 Name the version. Each one published is fixed once it is on npm, and carries
