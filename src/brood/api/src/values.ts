@@ -353,6 +353,8 @@ export const APPROVAL_OUTCOMES = [
   "revoked",
   "already_revoked",
   "reconnected",
+  "made",
+  "refused",
   "failed",
 ] as const;
 export type ApprovalOutcome = (typeof APPROVAL_OUTCOMES)[number];
@@ -370,14 +372,25 @@ export const APPROVAL_SAID: Record<ApprovalOutcome, string> = {
   already_revoked: "Approved. The program was already revoked.",
   reconnected:
     "Approved, but the mailbox was connected again after this was asked for, so it stays connected. Ask again to let it go.",
+  made: "Approved. The change is made.",
+  refused: "Approved, but Brood refused it, so nothing was changed.",
   failed: "Approved, but nothing was changed. Ask for it again.",
 };
+
+/**
+ * What every request's answer says first (D28 §2): nothing has changed yet,
+ * where to approve it, and when it lapses, so an agent relaying it never
+ * tells the person a change was made.
+ */
+export const askedSaid = (approveAt: string, expiresAt: Date): string =>
+  `Nothing has changed yet. Approve it in Brood, at ${approveAt}, before ${expiresAt.toISOString().slice(11, 19)} UTC.`;
 
 /**
  * What a request is said as when it was not approved, or was approved and
  * has yet to say what came of it, in the app and at the command line.
  */
 export const REQUEST_SAID = {
+  waiting: "Nothing has changed yet. It waits for you to approve it in Brood.",
   declined: "Declined. Nothing changed.",
   expired: "Nobody approved it in time. Nothing changed.",
   under_way: "Approved, and under way.",

@@ -1,9 +1,9 @@
 import { APP_ORIGIN } from "./origin.ts";
+import { APPROVAL_SAID, REQUEST_SAID } from "./values.ts";
 import type {
   ADDRESSED,
   AdoptOutcome,
   ApprovalOutcome,
-  ApprovedInApp,
   KeptKind,
   RequestState,
   AdoptRefusalWord,
@@ -559,16 +559,40 @@ export type ApprovalAsked = {
   request: string;
   approve_at: string;
   expires_at: string;
+  /** Nothing has changed yet, where to approve it and when it lapses (D28 §2), for an agent to relay. */
+  said: string;
 };
 
 /** Where a request stands, and what came of it once approved. */
 export type GetRequest = {
   request: string;
-  operation: ApprovedInApp;
+  operation: OperationName;
   state: RequestState;
   expires_at: string;
   outcome: ApprovalOutcome | null;
+  /** Why Brood refused it once approved, or null. */
+  refused: ProblemCode | null;
+  /** Where it stands, said as the app and the command line say it, for an agent to relay. */
+  said: string;
 };
+
+/**
+ * Where a request stands, as the app, the command line and an agent say it
+ * (D28 §2): waiting, what came of it once approved, with why where Brood
+ * refused it, or that nothing changed.
+ */
+export const requestSaid = (r: {
+  state: RequestState;
+  outcome: ApprovalOutcome | null;
+  refused?: ProblemCode | null;
+}): string =>
+  r.state !== "approved"
+    ? REQUEST_SAID[r.state]
+    : !r.outcome
+      ? REQUEST_SAID.under_way
+      : r.refused
+        ? `${APPROVAL_SAID[r.outcome]} ${PROBLEM_TITLES[r.refused].title}.`
+        : APPROVAL_SAID[r.outcome];
 
 /** Your own account's settings. */
 export type Preferences = {

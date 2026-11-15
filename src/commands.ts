@@ -22,8 +22,7 @@ import {
   type Arguments,
   type KeptKind,
   KEPT_KINDS,
-  APPROVAL_SAID,
-  REQUEST_SAID,
+  requestSaid,
   LETTER_CHOICES,
 } from "./brood/api/src/client.ts";
 import {
@@ -2059,14 +2058,8 @@ async function approvedInApp<K extends ApprovedInApp>(
   for (let i = 0; i < polls; i++) {
     await io.sleep(APPROVAL_POLL_MS);
     const now = await call(io, "get_request", { request });
-    const { state, outcome } = now.data;
-    if (state === "waiting") continue;
-    const said =
-      state === "approved"
-        ? outcome
-          ? APPROVAL_SAID[outcome]
-          : REQUEST_SAID.under_way
-        : REQUEST_SAID[state];
+    if (now.data.state === "waiting") continue;
+    const said = requestSaid(now.data);
     return shown(io, style, now, () => io.out(said));
   }
   throw new Refusal("Brood never said what came of it. Nothing was assumed.");
