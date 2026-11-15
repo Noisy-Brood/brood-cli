@@ -378,6 +378,14 @@ export const APPROVAL_SAID: Record<ApprovalOutcome, string> = {
 };
 
 /**
+ * What every tool an agent asks for a change by says first (D28 §2), so it
+ * knows before calling that the change waits on the person, and does not
+ * tell them it is done.
+ */
+export const ASKS_FIRST =
+  "This asks for a change and makes none: the person approves or declines it in Brood, on the page the answer names, before it lapses. Tell them that, in the answer's own words, and never that the change is made; `get_request` says what came of it.";
+
+/**
  * What every request's answer says first (D28 §2): nothing has changed yet,
  * where to approve it, and when it lapses, so an agent relaying it never
  * tells the person a change was made.
