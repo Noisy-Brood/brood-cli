@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { APP_ORIGIN } from "./brood/api/src/origin.ts";
 import { chmodSync, existsSync, statSync, writeFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { run } from "./main.ts";
@@ -328,5 +329,38 @@ describe("forgetting the session (#1339)", () => {
     });
     assert.equal(await run(s.io, ["logout"]), 0);
     assert.deepEqual(readdirSync(dirname(path)), []);
+  });
+});
+
+describe("brood connect and brood plan (#1729)", () => {
+  it("name the app's page for each, signed in or not, and call nothing", async () => {
+    for (const [command, page, s] of [
+      ["connect", `${APP_ORIGIN}/account/connect`, standIn({})],
+      ["plan", `${APP_ORIGIN}/account#plan`, standIn({})],
+      // Signed in, nothing is refreshed either: they need no session.
+      ["connect", `${APP_ORIGIN}/account/connect`, await signedIn({})],
+      ["plan", `${APP_ORIGIN}/account#plan`, await signedIn({})],
+    ] as const) {
+      assert.equal(await run(s.io, [command]), 0, command);
+      assert.equal(s.out.length, 1, command);
+      assert.ok(s.out[0]!.endsWith(`: ${page}`), s.out.join("\n"));
+      assert.deepEqual(s.sent, [], command);
+    }
+  });
+
+  it("take no arguments, and no option that would do nothing", async () => {
+    const refused: [string, ...string[]][] = [
+      ["connect", "gmail"],
+      ["plan", "--json"],
+      ["plan", "--owner", "user_2"],
+    ];
+    for (const argv of refused) {
+      const s = standIn({});
+      assert.equal(await run(s.io, argv), 1, argv.join(" "));
+      assert.ok(
+        s.err.some((l) => l.includes(`brood ${argv[0]}`)),
+        s.err.join("\n"),
+      );
+    }
   });
 });

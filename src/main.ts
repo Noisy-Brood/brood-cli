@@ -1,4 +1,5 @@
 import { parseArgs } from "node:util";
+import { APP_ORIGIN } from "./brood/api/src/origin.ts";
 import { call } from "./client.ts";
 import { COMMANDS, type OptionName, type Options } from "./commands.ts";
 import { Refused, Refusal, SessionEnded, type Io } from "./io.ts";
@@ -96,6 +97,8 @@ Your account
   brood programs                    the programs you allow to call Brood for you
   brood programs allow|revoke <name>
                                     allow one again, or revoke it, once you approve it in the app
+  brood connect                     where to connect a mailbox, in the app
+  brood plan                        where to choose a plan and pay, in the app
 
 Accounts and session
   brood accounts                    your mailboxes, and whether Brood can read them
@@ -224,6 +227,19 @@ export async function run(io: Io, argv: string[]): Promise<number> {
       takes([]);
       session();
       io.out(VERSION);
+      return 0;
+    }
+    // Connecting and paying happen on the mail provider's and Stripe's own
+    // pages, reached from the app (#1729), so these name the app's page and
+    // read nothing, as `brood login` names the page it approves on.
+    if (command === "connect" || command === "plan") {
+      takes([]);
+      session();
+      io.out(
+        command === "connect"
+          ? `Connect a mailbox in Brood, where your mail provider asks you to allow it: ${APP_ORIGIN}/account/connect`
+          : `Choose your plan in Brood. Paying is on Stripe's page, reached from there: ${APP_ORIGIN}/account#plan`,
+      );
       return 0;
     }
     if (command === "login") {
