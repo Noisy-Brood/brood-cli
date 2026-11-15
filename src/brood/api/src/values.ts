@@ -341,7 +341,9 @@ export type RequestState = (typeof REQUEST_STATES)[number];
 /**
  * What came of an approved request, as the app's own pages say it: a
  * mailbox letting go or already let go, an entry removed or not on the list,
- * a program allowed or revoked, or already so, or a change that failed.
+ * a program allowed or revoked, or already so; an agent's change made, or
+ * unchanged where it was already so, such as the rule book's numbers, or
+ * refused; or a change that failed.
  */
 export const APPROVAL_OUTCOMES = [
   "disconnecting",
@@ -354,6 +356,7 @@ export const APPROVAL_OUTCOMES = [
   "already_revoked",
   "reconnected",
   "made",
+  "unchanged",
   "refused",
   "failed",
 ] as const;
@@ -373,6 +376,8 @@ export const APPROVAL_SAID: Record<ApprovalOutcome, string> = {
   reconnected:
     "Approved, but the mailbox was connected again after this was asked for, so it stays connected. Ask again to let it go.",
   made: "Approved. The change is made.",
+  unchanged:
+    "Approved. Those were already the numbers in force, so nothing changed.",
   refused: "Approved, but Brood refused it, so nothing was changed.",
   failed: "Approved, but nothing was changed. Ask for it again.",
 };
