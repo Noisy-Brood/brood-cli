@@ -58,7 +58,7 @@ describe("brood login (#1339)", () => {
     assert.equal(stored?.refresh_token, "refresh-one");
     assert.equal(stored?.expires_at, NOW + 20_000 + 86_400_000);
     assert.equal(statSync(credentialsPath(s.io.env)).mode & 0o777, 0o600);
-    assert.ok(s.err.some((l) => l.includes("hush and unhush")));
+    assert.ok(s.err.some((l) => l.includes("make the changes the app makes")));
     assert.ok(
       ![...s.out, ...s.err].some(
         (l) => l.includes("refresh-one") || l.includes("access-one"),
