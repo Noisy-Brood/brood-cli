@@ -380,28 +380,33 @@ const senders: Run = async (io, style, options, args) => {
         `${data.counted_from} to ${data.counted_to}, counted by the ${data.resolution === "day" ? "day" : "whole month"}.`,
       ),
     );
-    if (!data.senders.length) return io.out("No one wrote in that stretch.");
+    if (!data.senders.length)
+      return io.out("No emails arrived in that stretch.");
     rows(
       io,
       data.senders.map((s) => [
         s.sender_written.address ?? s.sender_written.root,
-        String(s.messages),
+        emails(s.messages),
         `last ${day(s.last)}`,
       ]),
     );
   });
 };
 
+/** A count of emails, with its unit: the CLI prints no column headers. */
+const emails = (n: number): string => `${n} ${n === 1 ? "email" : "emails"}`;
+
 function printSender(io: Io, style: Style, s: Answers["get_sender"]): void {
   const w = s.sender_written;
   io.out(s.scope === "address" ? w.address : (w.relationship ?? w.root));
   io.out(
-    `${s.messages} messages in the last ${PORTRAIT_DAYS} days${s.mailing ? ", mostly mailings" : ""}.`,
+    `${emails(s.messages)} in the last ${PORTRAIT_DAYS} days${s.mailing ? ", mostly from mailing lists" : ""}.`,
   );
   io.out(
     s.written_to ? "You have written to it." : "You have not written to it.",
   );
-  if (s.first_wrote) io.out(`First wrote ${day(s.first_wrote)}.`);
+  if (s.first_wrote)
+    io.out(`Its first email that Brood has read: ${day(s.first_wrote)}.`);
   if (s.classifications.length) {
     io.out("");
     io.out("Classifications");
@@ -423,7 +428,7 @@ function printSender(io: Io, style: Style, s: Answers["get_sender"]): void {
       s.addresses.map((a) => [
         "",
         a.sender_written.address,
-        String(a.messages),
+        emails(a.messages),
         a.never_quiet ? "never quiet" : a.kept_out ? "kept out" : "",
       ]),
     );
@@ -449,7 +454,7 @@ const events: Run = async (io, style, options, args) => {
   });
   shown(io, style, answer, (data) => {
     io.err(dim(style, `Reaching back to ${day(data.retained_from)}.`));
-    if (!data.events.length) return io.out("No messages in that stretch.");
+    if (!data.events.length) return io.out("No emails in that stretch.");
     rows(
       io,
       data.events.map((e) => [
@@ -578,7 +583,7 @@ const rules: Run = async (io, style, options, args) => {
       await call(io, "file_existing", { ...owner(options), rule }),
       (f) =>
         io.out(
-          `${FILED_EXISTING[f.outcome]}${f.filed ? ` ${f.filed === 1 ? "One message" : `${f.filed} messages`} filed so far.` : ""}`,
+          `${FILED_EXISTING[f.outcome]}${f.filed ? ` ${f.filed === 1 ? "One email" : `${f.filed} emails`} filed so far.` : ""}`,
         ),
     );
   }

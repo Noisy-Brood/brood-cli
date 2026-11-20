@@ -10,6 +10,7 @@ import {
   standIn,
 } from "./stand-in.test-support.ts";
 import { DARK_BARN } from "./brood/tokens/dark.ts";
+import { PORTRAIT_DAYS } from "./brood/figures/index.ts";
 
 /**
  * The commands (DD10 §3, #1339): what each prints, that nothing a sender
@@ -67,8 +68,8 @@ describe("reading the index (#1339)", () => {
     });
     assert.equal(await run(s.io, ["senders"]), 0);
     assert.deepEqual(s.out, [
-      "stripe.com  41  last 2026-10-16",
-      "linear.app  28  last 2026-10-16",
+      "stripe.com  41 emails  last 2026-10-16",
+      "linear.app  28 emails  last 2026-10-16",
     ]);
     assert.ok(s.err.some((l) => l.includes("counted by the day")));
   });
@@ -81,7 +82,7 @@ describe("reading the index (#1339)", () => {
       ],
     });
     await run(s.io, ["senders"]);
-    assert.equal(s.out[0], "evil[2J.example  1  last 2026-10-16");
+    assert.equal(s.out[0], "evil[2J.example  1 email  last 2026-10-16");
   });
 
   it("says first when a mailbox was not read whole, before the answer", async () => {
@@ -196,6 +197,27 @@ describe("reading the index (#1339)", () => {
       scope: "domain",
     });
     assert.equal(s.out[0], "stripe.com");
+    // Each count says what it counts (voice, *Labels say what they count*).
+    assert.equal(
+      s.out[1],
+      `41 emails in the last ${PORTRAIT_DAYS} days, mostly from mailing lists.`,
+    );
+    assert.ok(
+      s.out.some((l) => l.startsWith("Its first email that Brood has read: ")),
+    );
+  });
+
+  it("says one email as one, and no mailing lists where there are none", async () => {
+    const s = await signedIn({
+      [api("list_senders")]: [
+        () => envelope(senders([{ root: "x.example", messages: 1 }])),
+      ],
+      [api("get_sender")]: [
+        () => envelope({ ...sender(null), messages: 1, mailing: false }),
+      ],
+    });
+    assert.equal(await run(s.io, ["senders", "x.example"]), 0);
+    assert.equal(s.out[1], `1 email in the last ${PORTRAIT_DAYS} days.`);
   });
 
   it("says when Brood has no mail from a sender named", async () => {
@@ -1996,7 +2018,7 @@ describe("rules file (#1729)", () => {
     });
     assert.equal(await run(s.io, ["rules", "file", ID(4)]), 0);
     assert.deepEqual(JSON.parse(s.sent.at(-1)!.body), { rule: ID(4) });
-    assert.match(s.out.at(-1)!, /12 messages filed so far\.$/);
+    assert.match(s.out.at(-1)!, /12 emails filed so far\.$/);
     assert.equal(await run(s.io, ["rules", "file", "nope"]), 1);
   });
 });
