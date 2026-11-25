@@ -293,6 +293,7 @@ export const UNSUBSCRIBE_OUTCOMES = [
   "never_quiet",
   "relationship",
   "limited",
+  "already_asked",
 ] as const;
 export type UnsubscribeOutcome = (typeof UNSUBSCRIBE_OUTCOMES)[number];
 

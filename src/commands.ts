@@ -1057,6 +1057,7 @@ const ASKED: Record<UnsubscribeOutcome, string> = {
   never_quiet: "Not sent: it is on your never-quiet list.",
   relationship: "Not sent: it is one of your relationships.",
   limited: "Not sent: today's allowance is spent. Try again tomorrow.",
+  already_asked: "Not sent: it was asked recently and answered, so not twice.",
 };
 
 /** `brood unsubscribe`: who can be asked, one asked now, or several in turn. */
