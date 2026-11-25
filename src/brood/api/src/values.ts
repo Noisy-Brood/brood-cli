@@ -112,7 +112,7 @@ export type GroupOutcome = (typeof GROUP_OUTCOMES)[number];
 
 /** What taking someone off the relationships list does, wherever it is said. */
 export const RELATIONSHIP_REMOVAL =
-  "Anything already filed stays filed, and a proposal waiting for them is withdrawn. Brood may then quiet them, will not bring them back after a quiet spell, and will not suggest them again.";
+  "Their filter keeps running and anything already filed stays filed: undoing that is its own step, on What Brood files now. A proposal waiting for them is withdrawn. Brood may then quiet them, will not bring them back after a quiet spell, and will not suggest them again.";
 
 /** What came of taking up or dismissing a suggestion. */
 export const SUGGESTION_OUTCOMES = ["done", "not_suggested"] as const;
