@@ -1282,7 +1282,7 @@ describe("relationships add (#659)", () => {
     assert.deepEqual(s.out, [
       "line 1  Acme: acme.com  to add",
       "line 2  gmail.com       refused: a mail provider's domain or your own",
-      "Added one relationship. Brood proposes a home for their mail now, among your proposals.",
+      "Added one relationship. Brood proposes filing their mail now, among your proposals.",
     ]);
   });
 
@@ -1313,7 +1313,7 @@ describe("relationships add (#659)", () => {
     );
     assert.equal(
       s.out.at(-1),
-      "Added 2 relationships. Brood proposes a home for their mail shortly.",
+      "Added 2 relationships. Brood proposes filing their mail shortly.",
     );
   });
 

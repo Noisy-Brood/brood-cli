@@ -8,6 +8,7 @@ import { login } from "./sign-in.ts";
 import { readCredentials, removeCredentials } from "./store.ts";
 import { VERSION } from "./version.ts";
 import { depthOf, wrenIn } from "./wren.ts";
+import { PUBLIC_HOME, PUBLIC_HOMES } from "./brood/figures/index.ts";
 
 /**
  * `brood`, the command line over Brood's index (DD10): it answers questions
@@ -43,10 +44,10 @@ Suppression, which changes your mailbox
   brood unhush <domain|address|id>  undo the filing
   brood keep-out <address>          keep one address out of its domain's filing, and bring its mail back
   brood rules file <id>             file the mail already there that a filter would have filed
-  brood batch <home> on|off         bring a home's mail back at your arrival hours
-  brood quieted                     homes Brood quieted for their silence
-  brood quieted restore <home>      bring one back, filing again
-  brood quieted leave <home>        leave one quiet after its sender wrote again
+  brood batch <which> on|off        bring a ${PUBLIC_HOME}'s mail back at your arrival hours
+  brood quieted                     ${PUBLIC_HOMES} Brood quieted for their silence
+  brood quieted restore <which>     bring one back, filing again
+  brood quieted leave <which>       leave one quiet after its sender wrote again
 Your own filters
   brood own-rules                   your filters in each mailbox, read now
   brood own-rules adopt <mailbox> <id>
@@ -72,7 +73,7 @@ Keeping in view, which changes Brood's filters so it never files these senders
   brood keep remove <entry> [<kind>]
                                     take one off the list, once you approve it in the app
 
-Relationships, whose mail Brood gives a home of its own
+Relationships, whose mail Brood gives a ${PUBLIC_HOME} of its own
   brood relationships               who is on the list, and who Brood suggests
   brood relationships add --group <name> [<file>]
                                     add them to a group, one a line, as Name: domain, domain

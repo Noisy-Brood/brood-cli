@@ -31,6 +31,8 @@ import {
   APPROVAL_MINUTES,
   PORTRAIT_DAYS,
   PROPOSALS_AT_ONCE,
+  PUBLIC_HOME,
+  PUBLIC_HOMES,
 } from "./brood/figures/index.ts";
 import { call } from "./client.ts";
 import { clean, Refusal, Refused, type Io } from "./io.ts";
@@ -848,7 +850,7 @@ const placedIn = (group: string): PasteSpec<"add_relationships"> => ({
     const n = added(c);
     if (n === 0) return io.out("No new relationships were added.");
     io.out(
-      `Added ${n === 1 ? "one relationship" : `${n} relationships`}. Brood proposes a home for their mail ${c.later ? "shortly" : "now, among your proposals"}.`,
+      `Added ${n === 1 ? "one relationship" : `${n} relationships`}. Brood proposes filing their mail ${c.later ? "shortly" : "now, among your proposals"}.`,
     );
   },
 });
@@ -1236,7 +1238,7 @@ async function relationshipVerbs(
       return shown(io, style, await call(io, "accept_suggestion", body), (a) =>
         io.out(
           a.outcome === "done"
-            ? `Added. Brood proposes a home for their mail ${a.later ? "shortly" : "now, among your proposals"}.`
+            ? `Added. Brood proposes filing their mail ${a.later ? "shortly" : "now, among your proposals"}.`
             : "It is no longer a suggestion.",
         ),
       );
@@ -1494,12 +1496,9 @@ async function homeIn(
 }
 
 const RESTORED: Record<Answers["restore_quieted"]["outcome"], string> = {
-  restored:
-    "Brought back. Brood files it again, and its home is back in place.",
-  restored_left:
-    "Brought back. Brood files it again; a home you renamed or removed is left as it is.",
-  restored_later:
-    "Brought back. Brood files it again, and moves its home back at the next rules pass.",
+  restored: `Brought back. Brood files it again, and its ${PUBLIC_HOME} is back in place.`,
+  restored_left: `Brought back. Brood files it again; a ${PUBLIC_HOME} you renamed or removed is left as it is.`,
+  restored_later: `Brought back. Brood files it again, and moves its ${PUBLIC_HOME} back at the next rules pass.`,
   not_quieted: "It is not quieted, so nothing changed.",
 };
 
@@ -1529,7 +1528,10 @@ const quieted: Run = async (io, style, options, args) => {
       `brood quieted takes restore or leave, not ${clean(verb)}.`,
     );
   without(options, ["limit", "cursor"], `brood quieted ${verb}`);
-  const name = one(rest, "quieted home, by what it covers, its path or its id");
+  const name = one(
+    rest,
+    `quieted ${PUBLIC_HOME}, by what it covers, its path or its id`,
+  );
   const classification = await homeIn(
     io,
     style,
@@ -1555,18 +1557,18 @@ const quieted: Run = async (io, style, options, args) => {
 const BATCHED: Record<Answers["set_batched"]["outcome"], string> = {
   batched: "Batched. Its mail comes back to your inbox at your arrival hours.",
   unbatched: "No longer batched.",
-  unchanged: "It was already so, or is not a home that can be batched.",
+  unchanged: `It was already so, or is not a ${PUBLIC_HOME} that can be batched.`,
   no_hours:
     "Set your arrival hours on the account page first: they are when batched mail comes back.",
   cannot:
     "A mailbox filing it cannot return mail in batches, or nothing files it now.",
 };
 
-/** `brood batch <home> on|off`. */
+/** `brood batch <which> on|off`. */
 const batch: Run = async (io, style, options, args) => {
   const [name, setting, ...rest] = args;
   if (name === undefined || setting === undefined || rest.length)
-    throw new Refusal("brood batch takes a home and on or off.");
+    throw new Refusal(`brood batch takes a ${PUBLIC_HOME} and on or off.`);
   if (setting !== "on" && setting !== "off")
     throw new Refusal("brood batch takes on or off.");
   const classification = await homeIn(
@@ -1595,8 +1597,8 @@ const CANNOT_ADOPT: Record<AdoptRefusalWord, string> = {
   keeps_in_inbox: "it leaves mail in the inbox",
   forwards: "it forwards",
   does_more: "it does more than file",
-  no_home: "it files under none of your homes",
-  several_homes: "it files under several homes",
+  no_home: `it files under none of your ${PUBLIC_HOMES}`,
+  several_homes: `it files under several ${PUBLIC_HOMES}`,
 };
 
 const DOES: Record<OwnRuleDoesWord, string> = {
@@ -1761,7 +1763,7 @@ const KEPT_OUT: Record<Answers["keep_out"]["outcome"], string> = {
     "Kept out. Brood will not file it again, and its mail is coming back to your inbox, the first of it now and the rest within the hour.",
   kept_out_pending:
     "Kept out, and its mail is coming back. Brood narrows the filter itself within the hour; until then new mail from it may still be filed.",
-  own_home: "It has a home of its own: brood unhush undoes that.",
+  own_home: `It has a ${PUBLIC_HOME} of its own: brood unhush undoes that.`,
   not_filed: "Nothing files it now.",
   unrenderable:
     "Its address is not one a filter can leave out exactly, so nothing changed.",
