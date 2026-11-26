@@ -377,10 +377,10 @@ export const APPROVAL_SAID: Record<ApprovalOutcome, string> = {
   reconnected:
     "Approved, but the mailbox was connected again after this was asked for, so it stays connected. Ask again to let it go.",
   made: "Approved. The change is made.",
-  unchanged:
-    "Approved. Those were already the numbers in force, so nothing changed.",
+  unchanged: "Approved. It was already so, so nothing changed.",
   refused: "Approved, but Brood refused it, so nothing was changed.",
-  failed: "Approved, but nothing was changed. Ask for it again.",
+  failed:
+    "Approved, but Brood could not make the change as asked, so nothing changed.",
 };
 
 /**
